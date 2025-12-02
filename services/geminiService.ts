@@ -156,57 +156,71 @@ const analyzeWithDeepSeek = async (payload: { type: string, text: string }) => {
   return JSON.parse(cleanJson(content));
 };
 
-// --- GEMINI ANALYZER (Backend Proxy) ---
+// --- GEMINI ANALYZER (Backend Proxy with Client Fallback) ---
 
 const analyzeWithGeminiBackend = async (payload: any) => {
-  // Use Backend Proxy for Gemini to bypass GFW (production) or fallback logic
-  const response = await fetch('/api/analyze', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
+  // Use AbortController to enforce a timeout (e.g., 5 seconds)
+  // This ensures the preview environment doesn't hang forever waiting for a non-existent backend
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-  // Check for HTML response (Preview environment 404 fallback)
-  const contentType = response.headers.get("content-type");
-  if (response.ok && contentType && contentType.includes("application/json")) {
+  try {
+    const response = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    // Strict check: Preview environment often returns 200 OK with HTML content (index.html) for unknown routes
+    // We MUST treat HTML response as a failure of the backend API
+    const contentType = response.headers.get("content-type");
+    if (!response.ok || !contentType || !contentType.includes("application/json")) {
+      throw new Error("Backend API not found or returned HTML");
+    }
+
     return await response.json();
-  }
 
-  // Fallback to Client Key if backend fails (Preview Mode)
-  const clientApiKey = process.env.API_KEY;
-  if (!clientApiKey) {
-    throw new Error("后端服务不可用，且未配置前端 API Key");
-  }
+  } catch (error) {
+    console.warn("Backend API unavailable (Preview Mode or Timeout), switching to Client-Side SDK Fallback...", error);
+    
+    // --- FALLBACK: Client-Side SDK ---
+    // This part runs only if backend fails (e.g. in right-side Preview Canvas)
+    const clientApiKey = process.env.API_KEY;
+    if (!clientApiKey) {
+      throw new Error("后端服务连接失败，且未配置前端 API Key (process.env.API_KEY is missing)");
+    }
 
-  console.warn("Backend unavailable, switching to Client-Side Gemini SDK...");
-  const ai = new GoogleGenAI({ apiKey: clientApiKey });
-  const model = 'gemini-2.5-flash';
-  
-  let schema: Schema | undefined;
-  let prompt = '';
-  let parts: any[] = [];
-  
-  if (payload.type === 'word') {
-     schema = singleAnalysisSchema;
-     prompt = `Analyze word "${payload.text}". Pinyin, Definition, Match questions. JSON.`;
-     parts = [{ text: prompt }];
-  } else if (payload.type === 'poem') {
-     schema = poemSchema;
-     prompt = `Analyze poem "${payload.text}". Title, Author, Fill/Def questions. JSON.`;
-     parts = [{ text: prompt }];
-  } else if (payload.type === 'ocr') {
-     schema = { type: Type.OBJECT, properties: { words: { type: Type.ARRAY, items: { type: Type.STRING } } } };
-     prompt = "List all chinese words.";
-     parts = [{ inlineData: { mimeType: 'image/jpeg', data: payload.image } }, { text: prompt }];
-  }
+    const ai = new GoogleGenAI({ apiKey: clientApiKey });
+    const model = 'gemini-2.5-flash';
+    
+    let schema: Schema | undefined;
+    let prompt = '';
+    let parts: any[] = [];
+    
+    if (payload.type === 'word') {
+       schema = singleAnalysisSchema;
+       prompt = `Analyze word "${payload.text}". Pinyin, Definition, Match questions. JSON.`;
+       parts = [{ text: prompt }];
+    } else if (payload.type === 'poem') {
+       schema = poemSchema;
+       prompt = `Analyze poem "${payload.text}". Title, Author, Fill/Def questions. JSON.`;
+       parts = [{ text: prompt }];
+    } else if (payload.type === 'ocr') {
+       schema = { type: Type.OBJECT, properties: { words: { type: Type.ARRAY, items: { type: Type.STRING } } } };
+       prompt = "List all chinese words.";
+       parts = [{ inlineData: { mimeType: 'image/jpeg', data: payload.image } }, { text: prompt }];
+    }
 
-  const genRes = await ai.models.generateContent({
-    model,
-    contents: { parts },
-    config: { responseMimeType: 'application/json', responseSchema: schema }
-  });
-  
-  return JSON.parse(cleanJson(genRes.text));
+    const genRes = await ai.models.generateContent({
+      model,
+      contents: { parts },
+      config: { responseMimeType: 'application/json', responseSchema: schema }
+    });
+    
+    return JSON.parse(cleanJson(genRes.text));
+  }
 };
 
 
@@ -276,9 +290,6 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
     const settings = getSettings();
     // DeepSeek V3 (Chat) usually doesn't support Image input. Fallback to Gemini or error.
     if (settings.provider === AIProvider.DEEPSEEK) {
-      // NOTE: If user forces DeepSeek, we can either throw error or fallback.
-      // For now, let's try to fallback to Gemini Backend invisibly for OCR only
-      // OR alert user.
       console.warn("DeepSeek does not support OCR yet, attempting Gemini fallback...");
       const data = await analyzeWithGeminiBackend({ type: 'ocr', image: base64Data });
       return data.words || [];
