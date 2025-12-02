@@ -1,13 +1,9 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 
-export const config = {
-  runtime: 'edge',
-};
-
+// Default to Node.js runtime (more stable for Google SDK than Edge)
 const apiKey = process.env.API_KEY;
 
-// --- SCHEMAS (Moved from frontend) ---
+// --- SCHEMAS ---
 const itemSchemaProperties = {
   word: { type: Type.STRING },
   pinyin: { type: Type.STRING },
@@ -82,14 +78,33 @@ const cleanJson = (text) => {
   return cleaned;
 };
 
-export default async function handler(request) {
+export default async function handler(req, res) {
+  // CORS Handling (Optional for Vercel, but good practice)
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+  );
+
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method Not Allowed' });
+  }
+
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: "Server API Key missing" }), { status: 500 });
+    console.error("CRITICAL: Server API Key is missing in environment variables.");
+    return res.status(500).json({ error: "Server API Key missing. Please configure API_KEY in Vercel Settings." });
   }
 
   try {
     const ai = new GoogleGenAI({ apiKey });
-    const { type, text, image } = await request.json();
+    const { type, text, image } = req.body;
 
     let model = 'gemini-2.5-flash';
     let prompt = '';
@@ -132,7 +147,7 @@ export default async function handler(request) {
         break;
 
       default:
-        return new Response(JSON.stringify({ error: "Invalid type" }), { status: 400 });
+        return res.status(400).json({ error: "Invalid request type" });
     }
 
     const response = await ai.models.generateContent({
@@ -145,12 +160,12 @@ export default async function handler(request) {
     });
 
     const cleanText = cleanJson(response.text);
-    return new Response(cleanText, {
-      headers: { 'Content-Type': 'application/json' }
-    });
+    const jsonResponse = JSON.parse(cleanText);
+    
+    return res.status(200).json(jsonResponse);
 
   } catch (error) {
-    console.error("API Error:", error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    console.error("Backend API Error:", error);
+    return res.status(500).json({ error: error.message || "Internal Server Error", details: error.toString() });
   }
 }
