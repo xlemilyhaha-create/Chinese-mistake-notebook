@@ -441,10 +441,10 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
                       {draft.type === EntryType.POEM && <span className="text-gray-500 text-sm">[{draft.analysis?.poemData?.dynasty}] {draft.analysis?.poemData?.author}</span>}
                     </div>
                     
-                    {/* Poem Content Preview */}
+                    {/* Poem Content Preview - FULL CONTENT, NO SLICE */}
                     {draft.type === EntryType.POEM && (
-                      <div className="text-sm text-gray-600 italic border-l-2 border-primary pl-2 mb-2">
-                         {draft.analysis?.poemData?.lines.slice(0, 2).join('，')}...
+                      <div className="text-sm text-gray-600 italic border-l-2 border-primary pl-2 mb-2 whitespace-pre-line leading-relaxed font-kai">
+                         {draft.analysis?.poemData?.lines.join('\n')}
                       </div>
                     )}
 

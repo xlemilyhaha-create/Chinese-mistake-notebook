@@ -99,8 +99,10 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onUpdate }) => {
               </div>
               
               {isPoem && word.poemData && (
-                <div className="mb-2 text-sm text-gray-500 line-clamp-2 italic font-kai">
-                  {word.poemData.lines.join('，')}
+                <div className="mb-2 text-sm text-gray-500 italic font-kai max-h-48 overflow-y-auto border-l-2 border-gray-100 pl-2">
+                  {word.poemData.lines.map((line, idx) => (
+                    <div key={idx} className="leading-relaxed">{line}</div>
+                  ))}
                 </div>
               )}
 
