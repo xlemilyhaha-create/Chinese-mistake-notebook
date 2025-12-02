@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { AnalysisResult } from "../types";
 
+// Adding a comment to trigger git update status
 const apiKey = process.env.API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
 
@@ -76,6 +77,7 @@ const ocrSchema: Schema = {
 
 export const analyzeWord = async (word: string): Promise<AnalysisResult> => {
   if (!apiKey) {
+    console.error("Gemini API Key is missing. Check your environment variables.");
     return { pinyin: "wèi pèi zhì", definitionData: null };
   }
 
@@ -105,7 +107,14 @@ export const analyzeWord = async (word: string): Promise<AnalysisResult> => {
 };
 
 export const analyzeWordsBatch = async (words: string[]): Promise<Record<string, AnalysisResult>> => {
-  if (!apiKey || words.length === 0) return {};
+  if (!apiKey) {
+    console.error("Gemini API Key is missing in batch request. Ensure 'API_KEY' is set in Vercel and exposed via vite.config.ts.");
+    // Log slightly more info to help debug in browser console
+    console.log("Current process.env.API_KEY is:", process.env.API_KEY ? "Present (Hidden)" : "UNDEFINED");
+    return {};
+  }
+  
+  if (words.length === 0) return {};
 
   try {
     const prompt = `
@@ -149,7 +158,10 @@ export const analyzeWordsBatch = async (words: string[]): Promise<Record<string,
 };
 
 export const extractWordsFromImage = async (base64Data: string, mimeType: string): Promise<string[]> => {
-  if (!apiKey) return ["示例", "图片", "识别"];
+  if (!apiKey) {
+    console.error("Gemini API Key is missing for OCR.");
+    return ["请配置", "API", "KEY"];
+  }
 
   try {
     const response = await ai.models.generateContent({
