@@ -83,30 +83,40 @@ const cleanJson = (text: string | undefined): string => {
 const performAnalysis = async (payload: any) => {
   // STRATEGY 1: Try Backend API (Best for Production/WeChat/Mobile)
   try {
+    // Set a strict timeout (e.g., 15 seconds) to avoid hanging forever
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
     const response = await fetch('/api/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
 
-    if (response.ok) {
+    // CRITICAL CHECK: In Preview environments (SPA), a missing API route often returns index.html (200 OK).
+    // We must check if the content-type is actually JSON.
+    const contentType = response.headers.get("content-type");
+    if (response.ok && contentType && contentType.includes("application/json")) {
       return await response.json();
     }
     
-    // If 404, it means we are likely in a Preview environment without a backend.
-    // If 500, the server might be misconfigured.
-    // In both cases, try fallback.
-    console.warn(`Backend API failed (${response.status}), attempting Client-Side Fallback...`);
+    // If we get here, it's either not OK (404/500) or it returned HTML (Preview fallback).
+    console.warn(`Backend API unusable (Status: ${response.status}, Type: ${contentType}). Switching to Client-Side Fallback.`);
   } catch (error) {
-    console.warn("Backend API unreachable, attempting Client-Side Fallback...", error);
+    console.warn("Backend API unreachable or timed out. Switching to Client-Side Fallback.", error);
   }
 
   // STRATEGY 2: Client-Side Fallback (Best for Preview/Localhost without Serverless)
   const clientApiKey = process.env.API_KEY;
   if (!clientApiKey) {
-    throw new Error("Analysis failed: Backend unreachable and no Client API Key found.");
+    // If both fail, throw a clear error
+    throw new Error("Analysis failed: Backend unreachable and no Client API Key configured.");
   }
 
+  console.log("Using Client-Side Gemini SDK...");
   const ai = new GoogleGenAI({ apiKey: clientApiKey });
   let model = 'gemini-2.5-flash';
   let prompt = '';
