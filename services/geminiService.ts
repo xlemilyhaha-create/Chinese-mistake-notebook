@@ -1,265 +1,63 @@
 
-import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { AnalysisResult, EntryType } from "../types";
 
-const apiKey = process.env.API_KEY || '';
-const ai = new GoogleGenAI({ apiKey });
+// Note: We no longer import GoogleGenAI here. All AI logic is in /api/analyze.js
 
-// Helper to clean markdown formatting from JSON response
-const cleanJson = (text: string | undefined): string => {
-  if (!text) return '{}';
-  let cleaned = text.trim();
-  // Remove markdown code blocks if present (e.g., ```json ... ```)
-  cleaned = cleaned.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
-  
-  // Robust extraction: find the first '{' and last '}'
-  const firstBrace = cleaned.indexOf('{');
-  const lastBrace = cleaned.lastIndexOf('}');
-  
-  if (firstBrace !== -1 && lastBrace !== -1) {
-    return cleaned.substring(firstBrace, lastBrace + 1);
-  }
-  
-  return cleaned;
-};
-
-// --- SCHEMAS ---
-
-const itemSchemaProperties = {
-  word: { type: Type.STRING, description: "The exact Chinese word." },
-  pinyin: {
-    type: Type.STRING,
-    description: "The correct pinyin for the word with tone marks. IMPORTANT: separate each character's pinyin with a space (e.g., 'jīng yì qiú jīng').",
-  },
-  
-  // Standard Definition (Explanation)
-  hasDefinitionQuestion: {
-    type: Type.BOOLEAN,
-    description: "Whether a multiple choice definition question can be generated.",
-  },
-  targetChar: {
-    type: Type.STRING,
-    description: "The specific character to test definition for.",
-    nullable: true,
-  },
-  options: {
-    type: Type.ARRAY,
-    items: { type: Type.STRING },
-    description: "4 options for the meaning in SIMPLIFIED CHINESE. One is correct, three are distractors.",
-    nullable: true,
-  },
-  correctIndex: {
-    type: Type.INTEGER,
-    description: "The index (0-3) of the correct option.",
-    nullable: true,
-  },
-
-  // NEW: Definition Match (Same Meaning Usage)
-  hasMatchQuestion: {
-    type: Type.BOOLEAN,
-    description: "Whether we can generate a question finding another word with the SAME character meaning.",
-  },
-  matchOptions: {
-    type: Type.ARRAY,
-    items: { type: Type.STRING },
-    description: "4 Chinese words/idioms containing the targetChar. One must use targetChar with the SAME meaning as in the source word. Three must use targetChar with DIFFERENT meanings.",
-    nullable: true
-  },
-  matchCorrectIndex: {
-    type: Type.INTEGER,
-    description: "Index (0-3) of the word where targetChar has the SAME meaning as in the source word.",
-    nullable: true
-  }
-};
-
-const singleAnalysisSchema: Schema = {
-  type: Type.OBJECT,
-  properties: itemSchemaProperties,
-  required: ["pinyin", "word"],
-};
-
-const batchAnalysisSchema: Schema = {
-  type: Type.OBJECT,
-  properties: {
-    items: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: itemSchemaProperties,
-        required: ["pinyin", "word"],
-      },
-    },
-  },
-};
-
-const poemSchema: Schema = {
-  type: Type.OBJECT,
-  properties: {
-    title: { type: Type.STRING },
-    dynasty: { type: Type.STRING, description: "e.g., Tang, Song" },
-    author: { type: Type.STRING },
-    content: { type: Type.STRING, description: "Full poem text" },
-    lines: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Lines split by punctuation" },
-    fillQuestions: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          lineIndex: { type: Type.INTEGER },
-          pre: { type: Type.STRING, description: "Text before the blank" },
-          answer: { type: Type.STRING, description: "The hidden text (2-4 chars)" },
-          post: { type: Type.STRING, description: "Text after the blank" },
-        }
-      },
-      description: "Pick 1-2 famous lines to create fill-in-the-blank questions."
-    },
-    definitionQuestions: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          lineIndex: { type: Type.INTEGER },
-          targetChar: { type: Type.STRING },
-          options: { type: Type.ARRAY, items: { type: Type.STRING } },
-          correctIndex: { type: Type.INTEGER },
-        }
-      },
-      description: "Pick 1-2 difficult characters to create definition questions. Options MUST be in Simplified Chinese."
-    }
-  },
-  required: ["title", "author", "lines"]
-};
-
-const ocrSchema: Schema = {
-  type: Type.OBJECT,
-  properties: {
-    words: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-      description: "List of Chinese words or idioms found in the image."
-    }
-  }
-};
-
-// --- FUNCTIONS ---
-
-export const analyzeWord = async (word: string): Promise<AnalysisResult> => {
-  if (!apiKey) {
-    console.error("API Key missing");
-    return { type: EntryType.WORD, word, pinyin: "Error: No API Key", definitionData: null, definitionMatchData: null };
-  }
-
+// --- HELPER TO CALL VERCEL API ---
+const callApi = async (payload: any) => {
   try {
-    const prompt = `
-      Analyze the Chinese word: "${word}".
-      1. Provide Pinyin with tones (space separated).
-      2. Create Definition Test (Meaning).
-      3. Create Definition Match Test (Same character meaning).
-      Options must be in Simplified Chinese.
-    `;
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: singleAnalysisSchema,
-      }
+    const response = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     });
 
-    const data = JSON.parse(cleanJson(response.text));
+    if (!response.ok) {
+      throw new Error(`API Error: ${response.statusText}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Service Error:", error);
+    throw error;
+  }
+};
+
+// --- EXPORTED FUNCTIONS ---
+
+export const analyzeWord = async (word: string): Promise<AnalysisResult> => {
+  try {
+    const data = await callApi({ type: 'word', text: word });
     return mapDataToResult(data);
   } catch (error) {
-    console.error(`Analysis Error for ${word}:`, error);
     return { type: EntryType.WORD, word, pinyin: "Error", definitionData: null, definitionMatchData: null };
   }
 };
 
 export const analyzeWordsBatch = async (words: string[]): Promise<Record<string, AnalysisResult>> => {
-  if (!apiKey || words.length === 0) return {};
-
-  // Chunking to avoid timeouts and token limits
+  // Although we process in parallel UI queue now, this function might still be used for legacy or bulk ops.
+  // We will map it to individual calls or handle it one by one to reuse the robust 'analyzeWord' endpoint.
+  // To avoid timeout on Vercel functions (10s limit on free tier), we prefer individual calls from the UI.
+  // But if called, we do parallel fetch here.
+  
+  const results: Record<string, AnalysisResult> = {};
+  
+  // Process 5 at a time max
   const CHUNK_SIZE = 5;
-  const chunks = [];
   for (let i = 0; i < words.length; i += CHUNK_SIZE) {
-    chunks.push(words.slice(i, i + CHUNK_SIZE));
+    const chunk = words.slice(i, i + CHUNK_SIZE);
+    await Promise.all(chunk.map(async (word) => {
+        const res = await analyzeWord(word);
+        results[word] = res;
+    }));
   }
 
-  const allResults: Record<string, AnalysisResult> = {};
-
-  try {
-    // Process chunks in parallel
-    const chunkPromises = chunks.map(async (chunkWords) => {
-      const prompt = `
-        Analyze the following list of Chinese words: ${JSON.stringify(chunkWords)}.
-        
-        For each word:
-        1. Pinyin with tones (space separated).
-        2. Definition Test (Meaning) - Simplified Chinese options.
-        3. Definition Match Test (Same meaning) - Simplified Chinese options.
-        
-        Return a JSON object with an 'items' array.
-      `;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: batchAnalysisSchema,
-        }
-      });
-
-      const rawText = cleanJson(response.text);
-      const data = JSON.parse(rawText);
-      const itemsArray = Array.isArray(data) ? data : (data.items || []);
-      
-      const chunkResult: Record<string, AnalysisResult> = {};
-      if (Array.isArray(itemsArray)) {
-        itemsArray.forEach((item: any) => {
-          if (item.word) {
-            chunkResult[item.word.trim()] = mapDataToResult(item);
-          }
-        });
-      }
-      return chunkResult;
-    });
-
-    const results = await Promise.all(chunkPromises);
-    results.forEach(res => Object.assign(allResults, res));
-    
-    return allResults;
-
-  } catch (error) {
-    console.error("Batch Analysis Error:", error);
-    return {};
-  }
+  return results;
 };
 
 export const analyzePoem = async (input: string): Promise<AnalysisResult | null> => {
-  if (!apiKey) return null;
-
   try {
-    const prompt = `
-      Analyze this Chinese poem text/request: "${input}".
-      1. Identify the Title, Author, Dynasty, and content.
-      2. Split into lines.
-      3. Create 1-2 "Fill in the blank" questions from famous lines (hide 2-4 chars).
-      4. Create 1-2 "Definition" questions for difficult characters.
-         - **CRITICAL**: The definition options must be in SIMPLIFIED CHINESE.
-    `;
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: poemSchema,
-      }
-    });
-
-    const data = JSON.parse(cleanJson(response.text));
-    
+    const data = await callApi({ type: 'poem', text: input });
     return {
       type: EntryType.POEM,
       word: data.title,
@@ -276,36 +74,16 @@ export const analyzePoem = async (input: string): Promise<AnalysisResult | null>
         definitionQuestions: data.definitionQuestions || []
       }
     };
-
   } catch (error) {
-    console.error("Poem Analysis Error:", error);
     return null;
   }
 };
 
 export const extractWordsFromImage = async (base64Data: string, mimeType: string): Promise<string[]> => {
-  if (!apiKey) return [];
-
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: {
-        parts: [
-          { inlineData: { mimeType, data: base64Data } },
-          { text: "Identify all Chinese vocabulary words, idioms, or distinct terms in this image. Return a simple list." }
-        ]
-      },
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: ocrSchema,
-      }
-    });
-
-    const data = JSON.parse(cleanJson(response.text));
+    const data = await callApi({ type: 'ocr', image: base64Data });
     return data.words || [];
-
   } catch (error) {
-    console.error("OCR Error:", error);
     return [];
   }
 };
