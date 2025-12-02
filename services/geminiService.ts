@@ -1,7 +1,87 @@
+import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { AnalysisResult, EntryType } from "../types";
 
-// --- HELPER TO CALL VERCEL API ---
-const callApi = async (payload: any) => {
+// --- CLIENT-SIDE SCHEMAS (For Fallback) ---
+// Note: These duplicates the logic in api/analyze.js to support the Hybrid Client Fallback
+const itemSchemaProperties = {
+  word: { type: Type.STRING },
+  pinyin: { type: Type.STRING },
+  hasDefinitionQuestion: { type: Type.BOOLEAN },
+  targetChar: { type: Type.STRING, nullable: true },
+  options: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true },
+  correctIndex: { type: Type.INTEGER, nullable: true },
+  hasMatchQuestion: { type: Type.BOOLEAN },
+  matchOptions: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true },
+  matchCorrectIndex: { type: Type.INTEGER, nullable: true }
+};
+
+const singleAnalysisSchema: Schema = {
+  type: Type.OBJECT,
+  properties: itemSchemaProperties,
+  required: ["pinyin", "word"],
+};
+
+const poemSchema: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    title: { type: Type.STRING },
+    dynasty: { type: Type.STRING },
+    author: { type: Type.STRING },
+    content: { type: Type.STRING },
+    lines: { type: Type.ARRAY, items: { type: Type.STRING } },
+    fillQuestions: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          lineIndex: { type: Type.INTEGER },
+          pre: { type: Type.STRING },
+          answer: { type: Type.STRING },
+          post: { type: Type.STRING },
+        }
+      }
+    },
+    definitionQuestions: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          lineIndex: { type: Type.INTEGER },
+          targetChar: { type: Type.STRING },
+          options: { type: Type.ARRAY, items: { type: Type.STRING } },
+          correctIndex: { type: Type.INTEGER },
+        }
+      }
+    }
+  },
+  required: ["title", "author", "lines"]
+};
+
+const ocrSchema: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    words: { type: Type.ARRAY, items: { type: Type.STRING } }
+  }
+};
+
+// --- HELPERS ---
+
+const cleanJson = (text: string | undefined): string => {
+  if (!text) return '{}';
+  let cleaned = text.trim();
+  cleaned = cleaned.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1) {
+    return cleaned.substring(firstBrace, lastBrace + 1);
+  }
+  return cleaned;
+};
+
+// --- HYBRID EXECUTION ENGINE ---
+
+const performAnalysis = async (payload: any) => {
+  // STRATEGY 1: Try Backend API (Best for Production/WeChat/Mobile)
   try {
     const response = await fetch('/api/analyze', {
       method: 'POST',
@@ -9,31 +89,87 @@ const callApi = async (payload: any) => {
       body: JSON.stringify(payload)
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorMsg = response.statusText;
-      try {
-        const errorJson = JSON.parse(errorText);
-        if (errorJson.error) errorMsg = errorJson.error;
-      } catch (e) {
-        errorMsg = errorText || response.statusText;
-      }
-      console.error(`Backend Error (${response.status}):`, errorMsg);
-      throw new Error(`Server Error: ${errorMsg}`);
+    if (response.ok) {
+      return await response.json();
     }
-
-    return await response.json();
+    
+    // If 404, it means we are likely in a Preview environment without a backend.
+    // If 500, the server might be misconfigured.
+    // In both cases, try fallback.
+    console.warn(`Backend API failed (${response.status}), attempting Client-Side Fallback...`);
   } catch (error) {
-    console.error("Service Layer Error:", error);
-    throw error;
+    console.warn("Backend API unreachable, attempting Client-Side Fallback...", error);
   }
+
+  // STRATEGY 2: Client-Side Fallback (Best for Preview/Localhost without Serverless)
+  const clientApiKey = process.env.API_KEY;
+  if (!clientApiKey) {
+    throw new Error("Analysis failed: Backend unreachable and no Client API Key found.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey: clientApiKey });
+  let model = 'gemini-2.5-flash';
+  let prompt = '';
+  let schema: Schema | undefined;
+  let parts: any[] = [];
+
+  switch (payload.type) {
+    case 'word':
+      prompt = `
+        Analyze the Chinese word: "${payload.text}".
+        1. Provide Pinyin with tones (space separated).
+        2. Create Definition Test (Meaning).
+        3. Create Definition Match Test (Same character meaning).
+        Options must be in Simplified Chinese.
+      `;
+      schema = singleAnalysisSchema;
+      parts = [{ text: prompt }];
+      break;
+
+    case 'poem':
+      prompt = `
+        Analyze this Chinese poem text/request: "${payload.text}".
+        1. Identify the Title, Author, Dynasty, and content.
+        2. Split into lines.
+        3. Create 1-2 "Fill in the blank" questions.
+        4. Create 1-2 "Definition" questions.
+        Options must be in SIMPLIFIED CHINESE.
+      `;
+      schema = poemSchema;
+      parts = [{ text: prompt }];
+      break;
+
+    case 'ocr':
+      prompt = "Identify all Chinese vocabulary words, idioms, or distinct terms in this image. Return a simple list.";
+      schema = ocrSchema;
+      parts = [
+        { inlineData: { mimeType: 'image/jpeg', data: payload.image } },
+        { text: prompt }
+      ];
+      break;
+      
+    default:
+      throw new Error("Unknown analysis type");
+  }
+
+  const response = await ai.models.generateContent({
+    model: model,
+    contents: { parts },
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: schema,
+    }
+  });
+
+  const cleanText = cleanJson(response.text);
+  return JSON.parse(cleanText);
 };
 
 // --- EXPORTED FUNCTIONS ---
 
 export const analyzeWord = async (word: string): Promise<AnalysisResult> => {
   try {
-    const data = await callApi({ type: 'word', text: word });
+    const data = await performAnalysis({ type: 'word', text: word });
     return mapDataToResult(data);
   } catch (error) {
     console.error(`Failed to analyze word: ${word}`, error);
@@ -42,24 +178,18 @@ export const analyzeWord = async (word: string): Promise<AnalysisResult> => {
 };
 
 export const analyzeWordsBatch = async (words: string[]): Promise<Record<string, AnalysisResult>> => {
-  // Process 5 at a time max using parallel fetch
+  // Using the new concurrent queue in UI, this function is less critical, 
+  // but we keep it functional just in case.
   const results: Record<string, AnalysisResult> = {};
-  const CHUNK_SIZE = 5;
-  
-  for (let i = 0; i < words.length; i += CHUNK_SIZE) {
-    const chunk = words.slice(i, i + CHUNK_SIZE);
-    await Promise.all(chunk.map(async (word) => {
-        const res = await analyzeWord(word);
-        results[word] = res;
-    }));
+  for (const word of words) {
+    results[word] = await analyzeWord(word);
   }
-
   return results;
 };
 
 export const analyzePoem = async (input: string): Promise<AnalysisResult | null> => {
   try {
-    const data = await callApi({ type: 'poem', text: input });
+    const data = await performAnalysis({ type: 'poem', text: input });
     return {
       type: EntryType.POEM,
       word: data.title,
@@ -84,7 +214,7 @@ export const analyzePoem = async (input: string): Promise<AnalysisResult | null>
 
 export const extractWordsFromImage = async (base64Data: string, mimeType: string): Promise<string[]> => {
   try {
-    const data = await callApi({ type: 'ocr', image: base64Data });
+    const data = await performAnalysis({ type: 'ocr', image: base64Data });
     return data.words || [];
   } catch (error) {
     console.error("OCR Error:", error);
