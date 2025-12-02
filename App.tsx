@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { BookOpen, FileText, Settings, Database } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { BookOpen, FileText, Settings, Database, Download, Upload, Trash2, AlertCircle } from 'lucide-react';
 import WordEntryForm from './components/WordEntryForm';
 import WordList from './components/WordList';
 import ExamGenerator from './components/ExamGenerator';
@@ -13,6 +13,8 @@ enum View {
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>(View.HOME);
   const [words, setWords] = useState<WordEntry[]>([]);
+  const [showSettings, setShowSettings] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load from LocalStorage
   useEffect(() => {
@@ -43,6 +45,55 @@ const App: React.FC = () => {
     setWords(prev => prev.map(w => w.id === id ? { ...w, ...updates } : w));
   };
 
+  // Export Data
+  const handleExport = () => {
+    const dataStr = JSON.stringify(words, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `语文错题本备份_${new Date().toLocaleDateString('zh-CN')}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Import Data
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        if (Array.isArray(json)) {
+          if (confirm(`确定要导入 ${json.length} 条数据吗？这将合并到当前题库。`)) {
+            // Merge strategy: Filter out duplicates based on ID
+            const currentIds = new Set(words.map(w => w.id));
+            const newWords = json.filter((w: WordEntry) => !currentIds.has(w.id));
+            setWords(prev => [...newWords, ...prev]);
+            alert(`成功导入 ${newWords.length} 个新词语！`);
+          }
+        } else {
+          alert("文件格式不正确");
+        }
+      } catch (err) {
+        alert("无法解析文件，请确保是正确的备份文件");
+      }
+    };
+    reader.readAsText(file);
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleClearAll = () => {
+    if (confirm("确定要清空所有数据吗？此操作无法撤销！建议先导出备份。")) {
+      setWords([]);
+      localStorage.removeItem('yuwen_words');
+    }
+  };
+
   if (currentView === View.EXAM) {
     return (
       <ExamGenerator 
@@ -59,16 +110,67 @@ const App: React.FC = () => {
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 text-primary font-bold text-xl">
             <BookOpen className="w-6 h-6" />
-            <span>语文错题助手</span>
+            <span className="hidden sm:inline">语文错题助手</span>
+            <span className="sm:hidden">错题助手</span>
           </div>
-          <button 
-            onClick={() => setCurrentView(View.EXAM)}
-            className="flex items-center gap-2 bg-gray-900 hover:bg-black text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-          >
-            <FileText className="w-4 h-4" />
-            生成试卷
-          </button>
+          
+          <div className="flex items-center gap-3">
+             <button
+              onClick={() => setShowSettings(!showSettings)}
+              className={`p-2 rounded-lg transition-colors ${showSettings ? 'bg-gray-100 text-gray-900' : 'text-gray-500 hover:bg-gray-50'}`}
+              title="数据管理"
+             >
+               <Settings className="w-5 h-5" />
+             </button>
+            <button 
+              onClick={() => setCurrentView(View.EXAM)}
+              className="flex items-center gap-2 bg-gray-900 hover:bg-black text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              <FileText className="w-4 h-4" />
+              <span className="hidden sm:inline">生成试卷</span>
+              <span className="sm:hidden">试卷</span>
+            </button>
+          </div>
         </div>
+
+        {/* Settings Panel */}
+        {showSettings && (
+          <div className="bg-gray-100 border-b border-gray-200 animate-in slide-in-from-top-2 duration-200">
+            <div className="max-w-5xl mx-auto px-4 py-3 flex flex-wrap gap-4 items-center justify-between">
+              <div className="text-sm text-gray-500 flex items-center">
+                <AlertCircle className="w-4 h-4 mr-2" />
+                数据保存在本地浏览器中
+              </div>
+              <div className="flex gap-2">
+                <button 
+                  onClick={handleExport}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded text-sm hover:bg-gray-50 text-gray-700"
+                >
+                  <Download className="w-4 h-4" /> 备份数据
+                </button>
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded text-sm hover:bg-gray-50 text-gray-700"
+                >
+                  <Upload className="w-4 h-4" /> 导入/恢复
+                </button>
+                <input 
+                  type="file" 
+                  ref={fileInputRef} 
+                  className="hidden" 
+                  accept=".json"
+                  onChange={handleImport}
+                />
+                <button 
+                  onClick={handleClearAll}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded text-sm hover:bg-red-100 text-red-600 ml-2"
+                >
+                  <Trash2 className="w-4 h-4" /> 清空
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Main Content */}
