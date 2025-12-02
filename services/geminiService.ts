@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
-import { AnalysisResult } from "../types";
+import { AnalysisResult, EntryType } from "../types";
 
 const apiKey = process.env.API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
@@ -10,45 +10,48 @@ const cleanJson = (text: string | undefined): string => {
   let cleaned = text.trim();
   // Remove markdown code blocks if present (e.g., ```json ... ```)
   cleaned = cleaned.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
+  
+  // Robust extraction: find the first '{' and last '}'
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+  
+  if (firstBrace !== -1 && lastBrace !== -1) {
+    return cleaned.substring(firstBrace, lastBrace + 1);
+  }
+  
   return cleaned;
 };
 
-// Reusable schema properties for a single word entry
+// --- SCHEMAS ---
+
 const itemSchemaProperties = {
-  word: { type: Type.STRING, description: "The exact Chinese word from the input list." },
+  word: { type: Type.STRING, description: "The exact Chinese word." },
   pinyin: {
     type: Type.STRING,
     description: "The correct pinyin for the word with tone marks. IMPORTANT: separate each character's pinyin with a space (e.g., 'jīng yì qiú jīng').",
   },
   hasDefinitionQuestion: {
     type: Type.BOOLEAN,
-    description: "Whether a multiple choice definition question can be generated for a specific character in this word.",
+    description: "Whether a multiple choice definition question can be generated.",
   },
   targetChar: {
     type: Type.STRING,
-    description: "The specific character to test definition for. If no specific hard character, pick the most difficult one.",
+    description: "The specific character to test definition for.",
     nullable: true,
   },
   options: {
     type: Type.ARRAY,
     items: { type: Type.STRING },
-    description: "4 options for the meaning of the targetChar. One is correct, three are plausible distractors.",
+    description: "4 options for the meaning. One is correct, three are distractors.",
     nullable: true,
   },
   correctIndex: {
     type: Type.INTEGER,
-    description: "The index (0-3) of the correct option in the options array.",
+    description: "The index (0-3) of the correct option.",
     nullable: true,
   },
 };
 
-const analysisSchema: Schema = {
-  type: Type.OBJECT,
-  properties: itemSchemaProperties,
-  required: ["pinyin", "hasDefinitionQuestion", "word"],
-};
-
-// Changed to Root Object -> items Array for stability
 const batchAnalysisSchema: Schema = {
   type: Type.OBJECT,
   properties: {
@@ -63,6 +66,44 @@ const batchAnalysisSchema: Schema = {
   },
 };
 
+const poemSchema: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    title: { type: Type.STRING },
+    dynasty: { type: Type.STRING, description: "e.g., Tang, Song" },
+    author: { type: Type.STRING },
+    content: { type: Type.STRING, description: "Full poem text" },
+    lines: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Lines split by punctuation" },
+    fillQuestions: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          lineIndex: { type: Type.INTEGER },
+          pre: { type: Type.STRING, description: "Text before the blank" },
+          answer: { type: Type.STRING, description: "The hidden text (2-4 chars)" },
+          post: { type: Type.STRING, description: "Text after the blank" },
+        }
+      },
+      description: "Pick 1-2 famous lines to create fill-in-the-blank questions."
+    },
+    definitionQuestions: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          lineIndex: { type: Type.INTEGER },
+          targetChar: { type: Type.STRING },
+          options: { type: Type.ARRAY, items: { type: Type.STRING } },
+          correctIndex: { type: Type.INTEGER },
+        }
+      },
+      description: "Pick 1-2 difficult characters to create definition questions."
+    }
+  },
+  required: ["title", "author", "lines"]
+};
+
 const ocrSchema: Schema = {
   type: Type.OBJECT,
   properties: {
@@ -74,42 +115,21 @@ const ocrSchema: Schema = {
   }
 };
 
+// --- FUNCTIONS ---
+
 export const analyzeWord = async (word: string): Promise<AnalysisResult> => {
-  if (!apiKey) {
-    console.error("Gemini API Key is missing. Check your environment variables.");
-    return { pinyin: "wèi pèi zhì", definitionData: null };
-  }
-
-  try {
-    const prompt = `
-      Analyze the Chinese word: "${word}".
-      1. Provide Pinyin with tones. Separate each character's pinyin with a space.
-      2. Create a definition test for the hardest character.
-    `;
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: analysisSchema,
-      }
-    });
-
-    const data = JSON.parse(cleanJson(response.text));
-    return mapDataToResult(data);
-
-  } catch (error) {
-    console.error("Gemini Analysis Error:", error);
-    return { pinyin: "Error", definitionData: null };
-  }
+  // Single word analysis logic (mostly replaced by batch, but kept for safety)
+  return { 
+    type: EntryType.WORD, 
+    word, 
+    pinyin: "error", 
+    definitionData: null 
+  };
 };
 
 export const analyzeWordsBatch = async (words: string[]): Promise<Record<string, AnalysisResult>> => {
   if (!apiKey) {
-    console.error("Gemini API Key is missing in batch request. Ensure 'API_KEY' is set in Vercel and exposed via vite.config.ts.");
-    // Log slightly more info to help debug in browser console
-    console.log("Current process.env.API_KEY is:", process.env.API_KEY ? "Present (Hidden)" : "UNDEFINED");
+    console.error("API Key missing");
     return {};
   }
   
@@ -119,9 +139,9 @@ export const analyzeWordsBatch = async (words: string[]): Promise<Record<string,
     const prompt = `
       Analyze the following list of Chinese words: ${JSON.stringify(words)}.
       For each word:
-      1. Provide Pinyin with tones. MUST separate each character's pinyin with a space (e.g. "měi lì" not "měilì").
+      1. Provide Pinyin with tones. MUST separate each character's pinyin with a space.
       2. Identify the most challenging character and create a definition multiple-choice question.
-      Return a JSON object with an 'items' array containing the results.
+      Return a JSON object with an 'items' array.
     `;
 
     const response = await ai.models.generateContent({
@@ -135,15 +155,12 @@ export const analyzeWordsBatch = async (words: string[]): Promise<Record<string,
 
     const rawText = cleanJson(response.text);
     const data = JSON.parse(rawText);
-    
-    // Handle both { items: [...] } (expected) and raw array (fallback)
     const itemsArray = Array.isArray(data) ? data : (data.items || []);
 
     const results: Record<string, AnalysisResult> = {};
     if (Array.isArray(itemsArray)) {
       itemsArray.forEach((item: any) => {
         if (item.word) {
-          // Normalize key just in case (trim)
           results[item.word.trim()] = mapDataToResult(item);
         }
       });
@@ -156,11 +173,53 @@ export const analyzeWordsBatch = async (words: string[]): Promise<Record<string,
   }
 };
 
-export const extractWordsFromImage = async (base64Data: string, mimeType: string): Promise<string[]> => {
-  if (!apiKey) {
-    console.error("Gemini API Key is missing for OCR.");
-    return ["请配置", "API", "KEY"];
+export const analyzePoem = async (input: string): Promise<AnalysisResult | null> => {
+  if (!apiKey) return null;
+
+  try {
+    const prompt = `
+      Analyze this Chinese poem text/request: "${input}".
+      1. Identify the Title, Author, Dynasty, and content.
+      2. Split into lines.
+      3. Create 1-2 "Fill in the blank" questions from famous lines (hide 2-4 chars).
+      4. Create 1-2 "Definition" questions for difficult characters.
+    `;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: poemSchema,
+      }
+    });
+
+    const data = JSON.parse(cleanJson(response.text));
+    
+    return {
+      type: EntryType.POEM,
+      word: data.title, // Use title as the main "word" field
+      pinyin: data.author, // Use pinyin field to store author temporarily for compatibility
+      definitionData: null,
+      poemData: {
+        title: data.title,
+        dynasty: data.dynasty,
+        author: data.author,
+        content: data.content,
+        lines: data.lines || [],
+        fillAnswers: data.fillQuestions || [],
+        definitionQuestions: data.definitionQuestions || []
+      }
+    };
+
+  } catch (error) {
+    console.error("Poem Analysis Error:", error);
+    return null;
   }
+};
+
+export const extractWordsFromImage = async (base64Data: string, mimeType: string): Promise<string[]> => {
+  if (!apiKey) return [];
 
   try {
     const response = await ai.models.generateContent({
@@ -168,7 +227,7 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
       contents: {
         parts: [
           { inlineData: { mimeType, data: base64Data } },
-          { text: "Identify all Chinese vocabulary words, idioms, or distinct terms in this image. Ignore simplified/traditional differences. Return a simple list." }
+          { text: "Identify all Chinese vocabulary words, idioms, or distinct terms in this image. Return a simple list." }
         ]
       },
       config: {
@@ -188,6 +247,8 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
 
 function mapDataToResult(data: any): AnalysisResult {
   return {
+    type: EntryType.WORD,
+    word: data.word,
     pinyin: data.pinyin,
     definitionData: data.hasDefinitionQuestion && data.options && data.options.length === 4 ? {
       targetChar: data.targetChar || data.word?.[0] || '?',

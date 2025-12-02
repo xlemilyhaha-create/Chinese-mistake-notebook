@@ -1,7 +1,14 @@
+export enum EntryType {
+  WORD = 'WORD',
+  POEM = 'POEM'
+}
+
 export enum QuestionType {
   PINYIN = 'PINYIN', // Word -> Write Pinyin
   DICTATION = 'DICTATION', // Pinyin -> Write Word
-  DEFINITION = 'DEFINITION' // Word -> Select Meaning
+  DEFINITION = 'DEFINITION', // Word -> Select Meaning
+  POEM_FILL = 'POEM_FILL', // Poem -> Fill in the blank
+  POEM_DEFINITION = 'POEM_DEFINITION' // Poem -> Select Meaning of character
 }
 
 export interface DefinitionQuestionData {
@@ -10,16 +17,40 @@ export interface DefinitionQuestionData {
   correctIndex: number; // 0-3
 }
 
+export interface PoemData {
+  title: string;
+  dynasty: string;
+  author: string;
+  content: string; // Full text
+  lines: string[]; // Split by punctuation
+  fillAnswers: {
+    lineIndex: number;
+    answer: string; // The part to be filled
+    pre: string; // Context before
+    post: string; // Context after
+  }[];
+  definitionQuestions: {
+    lineIndex: number;
+    targetChar: string;
+    options: string[];
+    correctIndex: number;
+  }[];
+}
+
 export interface WordEntry {
   id: string;
-  word: string;
-  pinyin: string;
-  createdAt: number; // Timestamp
+  type: EntryType; // NEW: Distinguish between WORD and POEM
+  word: string; // For Poem, this can be the Title
+  pinyin: string; // For Poem, can be empty or author pinyin
+  createdAt: number;
   
-  // AI-generated data cached for exams
+  // Word specific
   definitionData?: DefinitionQuestionData;
   
-  // User preferences for this word (which exams to include it in by default)
+  // Poem specific
+  poemData?: PoemData;
+  
+  // User preferences
   enabledTypes: QuestionType[]; 
 }
 
@@ -29,6 +60,9 @@ export interface FilterOptions {
 }
 
 export interface AnalysisResult {
+  type: EntryType;
+  word: string; // or Poem Title
   pinyin: string;
   definitionData: DefinitionQuestionData | null;
+  poemData?: PoemData;
 }

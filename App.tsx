@@ -3,7 +3,7 @@ import { BookOpen, FileText, Settings, Database, Download, Upload, Trash2, Alert
 import WordEntryForm from './components/WordEntryForm';
 import WordList from './components/WordList';
 import ExamGenerator from './components/ExamGenerator';
-import { WordEntry } from './types';
+import { WordEntry, EntryType } from './types';
 
 enum View {
   HOME = 'HOME',
@@ -16,19 +16,23 @@ const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load from LocalStorage
   useEffect(() => {
     const saved = localStorage.getItem('yuwen_words');
     if (saved) {
       try {
-        setWords(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        // Migration: Ensure all entries have a 'type' field
+        const migrated = parsed.map((w: any) => ({
+          ...w,
+          type: w.type || EntryType.WORD
+        }));
+        setWords(migrated);
       } catch (e) {
         console.error("Failed to parse saved words");
       }
     }
   }, []);
 
-  // Save to LocalStorage
   useEffect(() => {
     localStorage.setItem('yuwen_words', JSON.stringify(words));
   }, [words]);
@@ -45,7 +49,6 @@ const App: React.FC = () => {
     setWords(prev => prev.map(w => w.id === id ? { ...w, ...updates } : w));
   };
 
-  // Export Data
   const handleExport = () => {
     const dataStr = JSON.stringify(words, null, 2);
     const blob = new Blob([dataStr], { type: 'application/json' });
@@ -58,7 +61,6 @@ const App: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  // Import Data
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -69,9 +71,11 @@ const App: React.FC = () => {
         const json = JSON.parse(event.target?.result as string);
         if (Array.isArray(json)) {
           if (confirm(`确定要导入 ${json.length} 条数据吗？这将合并到当前题库。`)) {
-            // Merge strategy: Filter out duplicates based on ID
             const currentIds = new Set(words.map(w => w.id));
-            const newWords = json.filter((w: WordEntry) => !currentIds.has(w.id));
+            const newWords = json
+              .filter((w: any) => !currentIds.has(w.id))
+              .map((w: any) => ({ ...w, type: w.type || EntryType.WORD }));
+              
             setWords(prev => [...newWords, ...prev]);
             alert(`成功导入 ${newWords.length} 个新词语！`);
           }
@@ -83,7 +87,6 @@ const App: React.FC = () => {
       }
     };
     reader.readAsText(file);
-    // Reset input
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -105,7 +108,6 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
-      {/* Navbar */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 text-primary font-bold text-xl">
@@ -133,7 +135,6 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Settings Panel */}
         {showSettings && (
           <div className="bg-gray-100 border-b border-gray-200 animate-in slide-in-from-top-2 duration-200">
             <div className="max-w-5xl mx-auto px-4 py-3 flex flex-wrap gap-4 items-center justify-between">
@@ -154,13 +155,7 @@ const App: React.FC = () => {
                 >
                   <Upload className="w-4 h-4" /> 导入/恢复
                 </button>
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  className="hidden" 
-                  accept=".json"
-                  onChange={handleImport}
-                />
+                <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleImport} />
                 <button 
                   onClick={handleClearAll}
                   className="flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded text-sm hover:bg-red-100 text-red-600 ml-2"
@@ -173,15 +168,11 @@ const App: React.FC = () => {
         )}
       </header>
 
-      {/* Main Content */}
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-8">
-        
-        {/* Input Section */}
         <section>
           <WordEntryForm onAddWord={handleAddWord} />
         </section>
 
-        {/* List Section */}
         <section className="mt-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-gray-800 flex items-center">

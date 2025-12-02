@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { WordEntry, QuestionType } from '../types';
-import { Trash2, Calendar, Edit2, Check, X, ChevronDown } from 'lucide-react';
+import { WordEntry, QuestionType, EntryType } from '../types';
+import { Trash2, Calendar, Edit2, Check, X, ChevronDown, ScrollText } from 'lucide-react';
 
 interface WordListProps {
   words: WordEntry[];
@@ -64,97 +64,75 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onUpdate }) => {
         {displayedWords.map((word) => {
           const isEditing = editingId === word.id;
           const displayWord = isEditing && editState ? editState : word;
+          const isPoem = word.type === EntryType.POEM;
 
           return (
             <div key={word.id} className={`bg-white p-4 rounded-lg border shadow-sm transition-all group relative ${isEditing ? 'border-primary ring-1 ring-primary' : 'border-gray-100 hover:shadow-md'}`}>
               
               <div className="flex justify-between items-start mb-2">
                 <div>
-                  <h4 className="text-xl font-bold text-gray-800 font-serif">{word.word}</h4>
-                  <p className="text-primary text-sm font-medium">{word.pinyin}</p>
+                  <h4 className="text-xl font-bold text-gray-800 font-serif flex items-center gap-2">
+                    {isPoem && <ScrollText className="w-4 h-4 text-secondary" />}
+                    {word.word}
+                  </h4>
+                  {isPoem ? (
+                     <p className="text-gray-500 text-sm">[{word.poemData?.dynasty}] {word.poemData?.author}</p>
+                  ) : (
+                     <p className="text-primary text-sm font-medium">{word.pinyin}</p>
+                  )}
                 </div>
                 
                 <div className="flex items-center gap-1">
                   {isEditing ? (
                     <>
-                      <button 
-                        onClick={saveEdit}
-                        className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
-                        title="保存"
-                      >
-                        <Check className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={cancelEdit}
-                        className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
-                        title="取消"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
+                      <button onClick={saveEdit} className="p-1.5 text-green-600 hover:bg-green-50 rounded"><Check className="w-4 h-4" /></button>
+                      <button onClick={cancelEdit} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded"><X className="w-4 h-4" /></button>
                     </>
                   ) : (
                     <>
-                      <button 
-                        onClick={() => startEdit(word)}
-                        className="p-1.5 text-gray-300 hover:text-primary hover:bg-indigo-50 rounded transition-colors opacity-0 group-hover:opacity-100"
-                        title="编辑考点"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={() => onDelete(word.id)}
-                        className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors opacity-0 group-hover:opacity-100"
-                        title="删除"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <button onClick={() => startEdit(word)} className="p-1.5 text-gray-300 hover:text-primary hover:bg-indigo-50 rounded opacity-0 group-hover:opacity-100"><Edit2 className="w-4 h-4" /></button>
+                      <button onClick={() => onDelete(word.id)} className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100"><Trash2 className="w-4 h-4" /></button>
                     </>
                   )}
                 </div>
               </div>
               
+              {isPoem && word.poemData && (
+                <div className="mb-2 text-sm text-gray-500 line-clamp-2 italic font-kai">
+                  {word.poemData.lines.join('，')}
+                </div>
+              )}
+
               <div className="flex flex-wrap gap-2 mb-2 min-h-[24px] items-center">
                 {isEditing ? (
                   <>
                     <span className="text-xs text-gray-400 mr-1">考点:</span>
-                    <button
-                      onClick={() => toggleEditType(QuestionType.PINYIN)}
-                      className={`text-xs px-2 py-1 rounded-full border transition-colors ${
-                        displayWord.enabledTypes.includes(QuestionType.PINYIN)
-                          ? 'bg-blue-100 text-blue-700 border-blue-200'
-                          : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      注音
-                    </button>
-                    <button
-                      onClick={() => toggleEditType(QuestionType.DICTATION)}
-                      className={`text-xs px-2 py-1 rounded-full border transition-colors ${
-                        displayWord.enabledTypes.includes(QuestionType.DICTATION)
-                          ? 'bg-blue-100 text-blue-700 border-blue-200'
-                          : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      书写
-                    </button>
-                    {word.definitionData && (
-                      <button
-                        onClick={() => toggleEditType(QuestionType.DEFINITION)}
-                        className={`text-xs px-2 py-1 rounded-full border transition-colors ${
-                          displayWord.enabledTypes.includes(QuestionType.DEFINITION)
-                            ? 'bg-blue-100 text-blue-700 border-blue-200'
-                            : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
-                        }`}
-                      >
-                        释义
-                      </button>
+                    {!isPoem && (
+                      <>
+                        <button onClick={() => toggleEditType(QuestionType.PINYIN)} className={`text-xs px-2 py-1 rounded-full border ${displayWord.enabledTypes.includes(QuestionType.PINYIN) ? 'bg-blue-100 text-blue-700' : 'bg-white'}`}>注音</button>
+                        <button onClick={() => toggleEditType(QuestionType.DICTATION)} className={`text-xs px-2 py-1 rounded-full border ${displayWord.enabledTypes.includes(QuestionType.DICTATION) ? 'bg-blue-100 text-blue-700' : 'bg-white'}`}>书写</button>
+                        {word.definitionData && <button onClick={() => toggleEditType(QuestionType.DEFINITION)} className={`text-xs px-2 py-1 rounded-full border ${displayWord.enabledTypes.includes(QuestionType.DEFINITION) ? 'bg-blue-100 text-blue-700' : 'bg-white'}`}>释义</button>}
+                      </>
+                    )}
+                    {isPoem && (
+                       <>
+                         <button onClick={() => toggleEditType(QuestionType.POEM_FILL)} className={`text-xs px-2 py-1 rounded-full border ${displayWord.enabledTypes.includes(QuestionType.POEM_FILL) ? 'bg-blue-100 text-blue-700' : 'bg-white'}`}>默写</button>
+                         <button onClick={() => toggleEditType(QuestionType.POEM_DEFINITION)} className={`text-xs px-2 py-1 rounded-full border ${displayWord.enabledTypes.includes(QuestionType.POEM_DEFINITION) ? 'bg-blue-100 text-blue-700' : 'bg-white'}`}>释义</button>
+                       </>
                     )}
                   </>
                 ) : (
                   <>
-                    {displayWord.enabledTypes.includes(QuestionType.PINYIN) && <span className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-600 rounded">注音</span>}
-                    {displayWord.enabledTypes.includes(QuestionType.DICTATION) && <span className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-600 rounded">书写</span>}
-                    {displayWord.enabledTypes.includes(QuestionType.DEFINITION) && <span className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-600 rounded">释义</span>}
+                    {displayWord.enabledTypes.map(t => {
+                      const labels: Record<string, string> = {
+                        [QuestionType.PINYIN]: '注音',
+                        [QuestionType.DICTATION]: '书写',
+                        [QuestionType.DEFINITION]: '释义',
+                        [QuestionType.POEM_FILL]: '默写',
+                        [QuestionType.POEM_DEFINITION]: '释义'
+                      };
+                      return <span key={t} className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-600 rounded">{labels[t]}</span>;
+                    })}
                   </>
                 )}
               </div>

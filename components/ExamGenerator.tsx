@@ -11,10 +11,9 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [isPrinting, setIsPrinting] = useState(false);
   
-  // Get unique dates available in the word list
   const availableDates = useMemo(() => {
     const dates = new Set(words.map(w => new Date(w.createdAt).toLocaleDateString('zh-CN')));
-    return Array.from(dates).sort().reverse(); // Newest first
+    return Array.from(dates).sort().reverse();
   }, [words]);
 
   const filteredWords = useMemo(() => {
@@ -23,52 +22,51 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
   }, [words, selectedDate]);
 
   const questions = useMemo(() => {
-    const qs: { type: QuestionType, word: WordEntry }[] = [];
-    filteredWords.forEach(w => {
-      if (w.enabledTypes.includes(QuestionType.PINYIN)) qs.push({ type: QuestionType.PINYIN, word: w });
-      if (w.enabledTypes.includes(QuestionType.DICTATION)) qs.push({ type: QuestionType.DICTATION, word: w });
-      if (w.enabledTypes.includes(QuestionType.DEFINITION) && w.definitionData) qs.push({ type: QuestionType.DEFINITION, word: w });
-    });
-    return {
-      pinyin: qs.filter(q => q.type === QuestionType.PINYIN),
-      dictation: qs.filter(q => q.type === QuestionType.DICTATION),
-      definition: qs.filter(q => q.type === QuestionType.DEFINITION),
+    const qs = {
+      pinyin: [] as WordEntry[],
+      dictation: [] as WordEntry[],
+      definition: [] as WordEntry[],
+      poemFill: [] as WordEntry[],
+      poemDef: [] as WordEntry[]
     };
+
+    filteredWords.forEach(w => {
+      if (w.enabledTypes.includes(QuestionType.PINYIN)) qs.pinyin.push(w);
+      if (w.enabledTypes.includes(QuestionType.DICTATION)) qs.dictation.push(w);
+      if (w.enabledTypes.includes(QuestionType.DEFINITION) && w.definitionData) qs.definition.push(w);
+      if (w.enabledTypes.includes(QuestionType.POEM_FILL) && w.poemData) qs.poemFill.push(w);
+      if (w.enabledTypes.includes(QuestionType.POEM_DEFINITION) && w.poemData) qs.poemDef.push(w);
+    });
+    return qs;
   }, [filteredWords]);
 
   const handlePrint = () => {
     setIsPrinting(true);
-    // Small timeout to ensure DOM is ready and state updates
     setTimeout(() => {
       try {
         window.print();
       } catch (e) {
-        alert("调用打印失败，请尝试使用浏览器菜单中的打印功能。");
+        alert("调用打印失败");
       } finally {
         setIsPrinting(false);
       }
     }, 500);
   };
 
-  // Helper to render aligned pinyin boxes
   const renderPinyinBoxes = (entry: WordEntry) => {
     const chars = entry.word.split('');
     const pinyinParts = entry.pinyin.trim().split(/\s+/);
-    // Best effort alignment: if parts match chars, 1-to-1. Otherwise fallback to spread.
     const isAligned = chars.length === pinyinParts.length;
 
     return (
       <div className="flex gap-1 justify-center">
         {chars.map((char, idx) => (
           <div key={idx} className="flex flex-col items-center">
-             {/* Pinyin Slot */}
              <div className="h-6 flex items-end justify-center w-10 text-center">
                <span className="text-sm font-medium font-sans leading-none">
                  {isAligned ? pinyinParts[idx] : (idx === 0 ? entry.pinyin : '')}
                </span>
              </div>
-             
-             {/* Tian Zi Ge */}
              <div className="w-10 h-10 border border-black relative bg-white">
                 <div className="absolute inset-0 border-t border-dashed border-gray-300 top-1/2 pointer-events-none"></div>
                 <div className="absolute inset-0 border-l border-dashed border-gray-300 left-1/2 pointer-events-none"></div>
@@ -81,7 +79,6 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      {/* Control Panel - Hidden when printing via CSS */}
       <div className="bg-white border-b p-4 flex flex-col md:flex-row items-center justify-between gap-4 no-print shadow-sm z-10 shrink-0">
         <div className="flex items-center gap-4 w-full md:w-auto">
           <button onClick={onBack} className="text-gray-500 hover:text-gray-800 flex items-center">
@@ -119,17 +116,12 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
         </div>
       </div>
 
-      {/* Preview Area */}
-      {/* The `printable-root` ID is targeted by @media print to hide everything else */}
       <div className="flex-1 overflow-auto bg-gray-100 p-8 flex justify-center">
-        
         <div id="printable-root">
-          {/* A4 Container Visual on Screen */}
           <div className="bg-white shadow-lg w-[210mm] min-h-[297mm] mx-auto p-[20mm] box-border relative">
             
-            {/* Header */}
             <div className="text-center border-b-2 border-black pb-4 mb-8 section-title">
-              <h1 className="text-2xl font-bold font-serif tracking-widest mb-2">语文词语专项练习</h1>
+              <h1 className="text-2xl font-bold font-serif tracking-widest mb-2">语文专项综合练习</h1>
               <div className="flex justify-between text-sm mt-4 font-kai">
                 <span>班级: __________</span>
                 <span>姓名: __________</span>
@@ -146,12 +138,10 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
                   看汉字，写拼音
                 </h2>
                 <div className="flex flex-wrap gap-x-8 gap-y-8">
-                  {questions.pinyin.map((q, idx) => (
+                  {questions.pinyin.map((w, idx) => (
                     <div key={idx} className="flex flex-col items-center question-item w-[calc(25%-1.5rem)] min-w-[120px]">
-                      <div className="w-full h-8 border-b border-gray-400 relative">
-                          {/* Optional lines */}
-                      </div>
-                      <div className="font-serif text-xl mt-2 tracking-widest text-center">{q.word.word}</div>
+                      <div className="w-full h-8 border-b border-gray-400 relative"></div>
+                      <div className="font-serif text-xl mt-2 tracking-widest text-center">{w.word}</div>
                     </div>
                   ))}
                 </div>
@@ -166,30 +156,90 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
                  看拼音，写词语
                </h2>
                <div className="flex flex-wrap gap-x-6 gap-y-10">
-                 {questions.dictation.map((q, idx) => (
+                 {questions.dictation.map((w, idx) => (
                    <div key={idx} className="question-item">
-                      {renderPinyinBoxes(q.word)}
+                      {renderPinyinBoxes(w)}
                    </div>
                  ))}
                </div>
              </div>
             )}
 
-            {/* Section 3: Definition Selection */}
+            {/* Section 3: Poem Fill */}
+            {questions.poemFill.length > 0 && (
+              <div className="mb-8">
+                <h2 className="text-lg font-bold mb-6 font-kai flex items-center section-title">
+                  <span className="bg-black text-white w-6 h-6 rounded-full flex items-center justify-center text-sm mr-2">3</span>
+                  古诗文默写
+                </h2>
+                <div className="space-y-6">
+                  {questions.poemFill.map((w, idx) => (
+                    <div key={idx} className="question-item bg-gray-50 p-4 rounded border border-gray-100">
+                      <div className="font-bold mb-2 font-kai">{idx + 1}. {w.word} ({w.poemData?.dynasty} · {w.poemData?.author})</div>
+                      <div className="space-y-2">
+                        {w.poemData?.fillAnswers.map((fill, fIdx) => (
+                           <div key={fIdx} className="font-serif text-lg leading-loose">
+                             {fill.pre}
+                             <span className="inline-block border-b border-black min-w-[80px] text-center px-2 text-transparent select-none">{fill.answer}</span>
+                             {fill.post}
+                           </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Section 4: Poem Reading/Definition */}
+            {questions.poemDef.length > 0 && (
+               <div className="mb-8">
+               <h2 className="text-lg font-bold mb-6 font-kai flex items-center section-title">
+                 <span className="bg-black text-white w-6 h-6 rounded-full flex items-center justify-center text-sm mr-2">4</span>
+                 古诗文阅读与释义
+               </h2>
+               <div className="space-y-6">
+                 {questions.poemDef.map((w, idx) => (
+                    <div key={idx} className="question-item">
+                       <div className="mb-2 font-serif text-sm bg-gray-50 p-2 rounded italic">
+                         {w.poemData?.content.split('\n').map((line, lIdx) => <div key={lIdx}>{line}</div>)}
+                       </div>
+                       {w.poemData?.definitionQuestions.map((q, qIdx) => (
+                         <div key={qIdx} className="mt-2">
+                           <div className="font-serif text-base mb-1">
+                             {qIdx + 1}. 诗句“{w.poemData?.lines[q.lineIndex]}”中，“<span className="font-bold text-lg">{q.targetChar}</span>”的意思是：（ &nbsp;&nbsp;&nbsp;&nbsp; ）
+                           </div>
+                           <div className="grid grid-cols-2 gap-2 pl-4 text-sm font-kai">
+                              {q.options.map((opt, oIdx) => (
+                                  <div key={oIdx} className="flex">
+                                      <span className="mr-2 font-bold">{String.fromCharCode(65 + oIdx)}.</span>
+                                      <span>{opt}</span>
+                                  </div>
+                              ))}
+                           </div>
+                         </div>
+                       ))}
+                    </div>
+                 ))}
+               </div>
+             </div>
+            )}
+
+            {/* Section 5: Word Definition */}
             {questions.definition.length > 0 && (
                <div className="mb-8">
                <h2 className="text-lg font-bold mb-6 font-kai flex items-center section-title">
-                 <span className="bg-black text-white w-6 h-6 rounded-full flex items-center justify-center text-sm mr-2">3</span>
+                 <span className="bg-black text-white w-6 h-6 rounded-full flex items-center justify-center text-sm mr-2">5</span>
                  字义选择
                </h2>
                <div className="space-y-6">
-                 {questions.definition.map((q, idx) => (
+                 {questions.definition.map((w, idx) => (
                     <div key={idx} className="question-item">
                       <div className="font-serif text-base mb-2">
-                        {idx + 1}. 请选择“<span className="font-bold underline mx-1">{q.word.word}</span>”中“<span className="font-bold text-lg">{q.word.definitionData!.targetChar}</span>”的正确意思：（ &nbsp;&nbsp;&nbsp;&nbsp; ）
+                        {idx + 1}. 请选择“<span className="font-bold underline mx-1">{w.word}</span>”中“<span className="font-bold text-lg">{w.definitionData!.targetChar}</span>”的正确意思：（ &nbsp;&nbsp;&nbsp;&nbsp; ）
                       </div>
                       <div className="grid grid-cols-2 gap-2 pl-4 text-sm font-kai">
-                          {q.word.definitionData!.options.map((opt, oIdx) => (
+                          {w.definitionData!.options.map((opt, oIdx) => (
                               <div key={oIdx} className="flex">
                                   <span className="mr-2 font-bold">{String.fromCharCode(65 + oIdx)}.</span>
                                   <span>{opt}</span>
@@ -205,7 +255,6 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
             <div className="mt-12 text-center text-gray-300 text-xs no-print">
               Generated by Yuwen Cuoti Helper
             </div>
-
           </div>
         </div>
       </div>
