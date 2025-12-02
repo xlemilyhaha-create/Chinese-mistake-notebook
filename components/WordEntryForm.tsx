@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Loader2, Sparkles, CheckCircle, AlertCircle, Camera, X, ScrollText, Type } from 'lucide-react';
+import { Loader2, Sparkles, CheckCircle, AlertCircle, Camera, Image as ImageIcon, X, ScrollText, Type } from 'lucide-react';
 import { analyzeWordsBatch, extractWordsFromImage, analyzePoem } from '../services/geminiService';
 import { WordEntry, QuestionType, AnalysisResult, EntryType } from '../types';
 
@@ -30,7 +30,9 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<string>('');
   const [drafts, setDrafts] = useState<DraftEntry[]>([]);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   // --- Helpers ---
 
@@ -130,6 +132,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
 
     if (activeTab === EntryType.POEM) {
       alert("目前仅支持生字词图片识别，古诗请手动输入。");
+      e.target.value = ''; // Clear input
       return;
     }
 
@@ -156,7 +159,9 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
       setProcessingStatus('识别失败');
       setIsProcessing(false);
     }
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    
+    // Clear the input value to allow selecting the same file again if needed
+    e.target.value = '';
   };
 
   const handleSaveAll = () => {
@@ -222,18 +227,27 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
             <textarea
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder="输入多个字词，用空格或逗号分隔。或者点击右下角相机图标上传图片。"
+              placeholder="输入多个字词，用空格或逗号分隔。或者使用右下角按钮上传/拍摄照片。"
               className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary focus:border-transparent outline-none min-h-[100px] resize-y"
             />
             <div className="absolute bottom-3 right-3 flex gap-2">
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="p-2 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 transition-colors"
-                title="拍照/上传图片识别"
+                title="从相册选择"
+              >
+                <ImageIcon className="w-5 h-5" />
+              </button>
+              <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+
+              <button
+                onClick={() => cameraInputRef.current?.click()}
+                className="p-2 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 transition-colors"
+                title="直接拍照"
               >
                 <Camera className="w-5 h-5" />
               </button>
-              <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+              <input type="file" ref={cameraInputRef} className="hidden" accept="image/*" capture="environment" onChange={handleImageUpload} />
             </div>
           </div>
 
