@@ -72,6 +72,12 @@ const itemSchemaProperties = {
   }
 };
 
+const singleAnalysisSchema: Schema = {
+  type: Type.OBJECT,
+  properties: itemSchemaProperties,
+  required: ["pinyin", "word"],
+};
+
 const batchAnalysisSchema: Schema = {
   type: Type.OBJECT,
   properties: {
@@ -138,37 +144,18 @@ const ocrSchema: Schema = {
 // --- FUNCTIONS ---
 
 export const analyzeWord = async (word: string): Promise<AnalysisResult> => {
-   // Legacy single word - fallback to empty
-  return { 
-    type: EntryType.WORD, 
-    word, 
-    pinyin: "error", 
-    definitionData: null,
-    definitionMatchData: null
-  };
-};
-
-export const analyzeWordsBatch = async (words: string[]): Promise<Record<string, AnalysisResult>> => {
   if (!apiKey) {
     console.error("API Key missing");
-    return {};
+    return { type: EntryType.WORD, word, pinyin: "Error: No API Key", definitionData: null, definitionMatchData: null };
   }
-  
-  if (words.length === 0) return {};
 
   try {
     const prompt = `
-      Analyze the following list of Chinese words: ${JSON.stringify(words)}.
-      
-      For each word, perform these tasks:
-      1. **Pinyin**: Provide Pinyin with tones. Separate each character's pinyin with a space.
-      2. **Definition Test**: Identify the most challenging character (targetChar). Create a multiple-choice question for its MEANING. 
-         - **CRITICAL**: The options must be in SIMPLIFIED CHINESE. Do NOT use English.
-      3. **Definition Match Test (One-character multi-meaning)**: For the SAME targetChar, find 4 other Chinese words/idioms containing it.
-         - One word must use the targetChar with the SAME meaning as in the source word (Correct Answer).
-         - Three words must use the targetChar with DIFFERENT meanings (Distractors).
-      
-      Return a JSON object with an 'items' array.
+      Analyze the Chinese word: "${word}".
+      1. Provide Pinyin with tones (space separated).
+      2. Create Definition Test (Meaning).
+      3. Create Definition Match Test (Same character meaning).
+      Options must be in Simplified Chinese.
     `;
 
     const response = await ai.models.generateContent({
@@ -176,23 +163,72 @@ export const analyzeWordsBatch = async (words: string[]): Promise<Record<string,
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
-        responseSchema: batchAnalysisSchema,
+        responseSchema: singleAnalysisSchema,
       }
     });
 
-    const rawText = cleanJson(response.text);
-    const data = JSON.parse(rawText);
-    const itemsArray = Array.isArray(data) ? data : (data.items || []);
+    const data = JSON.parse(cleanJson(response.text));
+    return mapDataToResult(data);
+  } catch (error) {
+    console.error(`Analysis Error for ${word}:`, error);
+    return { type: EntryType.WORD, word, pinyin: "Error", definitionData: null, definitionMatchData: null };
+  }
+};
 
-    const results: Record<string, AnalysisResult> = {};
-    if (Array.isArray(itemsArray)) {
-      itemsArray.forEach((item: any) => {
-        if (item.word) {
-          results[item.word.trim()] = mapDataToResult(item);
+export const analyzeWordsBatch = async (words: string[]): Promise<Record<string, AnalysisResult>> => {
+  if (!apiKey || words.length === 0) return {};
+
+  // Chunking to avoid timeouts and token limits
+  const CHUNK_SIZE = 5;
+  const chunks = [];
+  for (let i = 0; i < words.length; i += CHUNK_SIZE) {
+    chunks.push(words.slice(i, i + CHUNK_SIZE));
+  }
+
+  const allResults: Record<string, AnalysisResult> = {};
+
+  try {
+    // Process chunks in parallel
+    const chunkPromises = chunks.map(async (chunkWords) => {
+      const prompt = `
+        Analyze the following list of Chinese words: ${JSON.stringify(chunkWords)}.
+        
+        For each word:
+        1. Pinyin with tones (space separated).
+        2. Definition Test (Meaning) - Simplified Chinese options.
+        3. Definition Match Test (Same meaning) - Simplified Chinese options.
+        
+        Return a JSON object with an 'items' array.
+      `;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: batchAnalysisSchema,
         }
       });
-    }
-    return results;
+
+      const rawText = cleanJson(response.text);
+      const data = JSON.parse(rawText);
+      const itemsArray = Array.isArray(data) ? data : (data.items || []);
+      
+      const chunkResult: Record<string, AnalysisResult> = {};
+      if (Array.isArray(itemsArray)) {
+        itemsArray.forEach((item: any) => {
+          if (item.word) {
+            chunkResult[item.word.trim()] = mapDataToResult(item);
+          }
+        });
+      }
+      return chunkResult;
+    });
+
+    const results = await Promise.all(chunkPromises);
+    results.forEach(res => Object.assign(allResults, res));
+    
+    return allResults;
 
   } catch (error) {
     console.error("Batch Analysis Error:", error);

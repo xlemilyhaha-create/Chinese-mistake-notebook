@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { Loader2, Sparkles, CheckCircle, AlertCircle, Camera, Image as ImageIcon, X, ScrollText, Type, Monitor } from 'lucide-react';
-import { analyzeWordsBatch, extractWordsFromImage, analyzePoem } from '../services/geminiService';
+import { analyzeWordsBatch, analyzeWord, extractWordsFromImage, analyzePoem } from '../services/geminiService';
 import { WordEntry, QuestionType, AnalysisResult, EntryType } from '../types';
 
 interface WordEntryFormProps {
@@ -132,46 +132,78 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     if (words.length === 0) return;
     
     setIsProcessing(true);
-    setProcessingStatus('正在批量分析字词...');
+    setProcessingStatus('正在初始化队列...');
     
-    try {
-      const newDrafts: DraftEntry[] = words.map(w => ({
-        id: crypto.randomUUID(),
-        word: w,
-        analysis: null,
-        enabledTypes: [...defaultTypes],
-        status: 'analyzing',
-        type: EntryType.WORD
-      }));
-      setDrafts(newDrafts);
+    // 1. Create placeholders immediately
+    const newDrafts: DraftEntry[] = words.map(w => ({
+      id: crypto.randomUUID(),
+      word: w,
+      analysis: null,
+      enabledTypes: [...defaultTypes],
+      status: 'pending', // Initial status
+      type: EntryType.WORD
+    }));
+    setDrafts(newDrafts);
+    setInputText('');
 
-      const results = await analyzeWordsBatch(words);
+    // 2. Concurrency Queue Logic
+    const CONCURRENCY_LIMIT = 3;
+    let currentIndex = 0;
+    let completedCount = 0;
+    
+    const processNext = async () => {
+      if (currentIndex >= newDrafts.length) return;
+      
+      const myIndex = currentIndex++;
+      const draft = newDrafts[myIndex];
 
-      setDrafts(prev => prev.map(draft => {
-        const res = results[draft.word];
-        if (res) {
+      // Update status to analyzing
+      setDrafts(prev => prev.map(d => d.id === draft.id ? { ...d, status: 'analyzing' } : d));
+
+      try {
+        const res = await analyzeWord(draft.word);
+        
+        // Update result
+        setDrafts(prev => prev.map(d => {
+          if (d.id !== draft.id) return d;
+          
+          if (res.pinyin === "Error") {
+             return { ...d, status: 'error' };
+          }
+          
           let types = [...defaultTypes];
-          // Auto-remove unavailable types
           if (types.includes(QuestionType.DEFINITION) && !res.definitionData) {
             types = types.filter(t => t !== QuestionType.DEFINITION);
           }
           if (types.includes(QuestionType.DEFINITION_MATCH) && !res.definitionMatchData) {
             types = types.filter(t => t !== QuestionType.DEFINITION_MATCH);
           }
-
-          return { ...draft, analysis: res, enabledTypes: types, status: 'done' };
-        } else {
-          return { ...draft, status: 'error' };
+          
+          return { ...d, analysis: res, enabledTypes: types, status: 'done' };
+        }));
+      } catch (e) {
+        setDrafts(prev => prev.map(d => d.id === draft.id ? { ...d, status: 'error' } : d));
+      } finally {
+        completedCount++;
+        setProcessingStatus(`正在分析... (${completedCount}/${newDrafts.length})`);
+        // Trigger next in queue
+        if (currentIndex < newDrafts.length) {
+          await processNext();
         }
-      }));
-      setInputText('');
-    } catch (err) {
-      console.error(err);
-      setProcessingStatus('分析出错');
-    } finally {
-      setIsProcessing(false);
-      setProcessingStatus('');
+      }
+    };
+
+    // Start initial pool
+    setProcessingStatus(`正在分析... (0/${newDrafts.length})`);
+    const initialPromises = [];
+    for (let i = 0; i < CONCURRENCY_LIMIT && i < newDrafts.length; i++) {
+      initialPromises.push(processNext());
     }
+    
+    await Promise.all(initialPromises);
+    
+    setIsProcessing(false);
+    setProcessingStatus('');
   };
 
   const handleAnalyzePoem = async () => {
@@ -470,8 +502,10 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
                   </div>
                 ) : (
                   <div className="flex items-center text-gray-500">
-                    {draft.status === 'analyzing' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <AlertCircle className="w-4 h-4 mr-2 text-red-500" />}
-                    {draft.status === 'analyzing' ? '分析中...' : '分析失败'}
+                    {draft.status === 'analyzing' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : 
+                     draft.status === 'pending' ? <span className="text-xs">等待分析...</span> :
+                     <AlertCircle className="w-4 h-4 mr-2 text-red-500" />}
+                    {draft.status === 'error' && '分析失败'}
                   </div>
                 )}
               </div>
