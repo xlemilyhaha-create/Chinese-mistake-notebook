@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { WordEntry, QuestionType, EntryType } from '../types';
 import { Trash2, Calendar, Edit2, Check, X, ChevronDown, ScrollText } from 'lucide-react';
@@ -112,6 +113,7 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onUpdate }) => {
                         <button onClick={() => toggleEditType(QuestionType.PINYIN)} className={`text-xs px-2 py-1 rounded-full border ${displayWord.enabledTypes.includes(QuestionType.PINYIN) ? 'bg-blue-100 text-blue-700' : 'bg-white'}`}>注音</button>
                         <button onClick={() => toggleEditType(QuestionType.DICTATION)} className={`text-xs px-2 py-1 rounded-full border ${displayWord.enabledTypes.includes(QuestionType.DICTATION) ? 'bg-blue-100 text-blue-700' : 'bg-white'}`}>书写</button>
                         {word.definitionData && <button onClick={() => toggleEditType(QuestionType.DEFINITION)} className={`text-xs px-2 py-1 rounded-full border ${displayWord.enabledTypes.includes(QuestionType.DEFINITION) ? 'bg-blue-100 text-blue-700' : 'bg-white'}`}>释义</button>}
+                        {word.definitionMatchData && <button onClick={() => toggleEditType(QuestionType.DEFINITION_MATCH)} className={`text-xs px-2 py-1 rounded-full border ${displayWord.enabledTypes.includes(QuestionType.DEFINITION_MATCH) ? 'bg-blue-100 text-blue-700' : 'bg-white'}`}>辨析</button>}
                       </>
                     )}
                     {isPoem && (
@@ -128,6 +130,7 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onUpdate }) => {
                         [QuestionType.PINYIN]: '注音',
                         [QuestionType.DICTATION]: '书写',
                         [QuestionType.DEFINITION]: '释义',
+                        [QuestionType.DEFINITION_MATCH]: '辨析',
                         [QuestionType.POEM_FILL]: '默写',
                         [QuestionType.POEM_DEFINITION]: '释义'
                       };

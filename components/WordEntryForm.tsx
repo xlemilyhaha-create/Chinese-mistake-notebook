@@ -1,5 +1,6 @@
+
 import React, { useState, useRef } from 'react';
-import { Loader2, Sparkles, CheckCircle, AlertCircle, Camera, Image as ImageIcon, X, ScrollText, Type } from 'lucide-react';
+import { Loader2, Sparkles, CheckCircle, AlertCircle, Camera, Image as ImageIcon, X, ScrollText, Type, Monitor } from 'lucide-react';
 import { analyzeWordsBatch, extractWordsFromImage, analyzePoem } from '../services/geminiService';
 import { WordEntry, QuestionType, AnalysisResult, EntryType } from '../types';
 
@@ -25,6 +26,12 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
   
   // Poem State
   const [poemInput, setPoemInput] = useState('');
+
+  // Camera State
+  const [showCameraModal, setShowCameraModal] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Shared State
   const [isProcessing, setIsProcessing] = useState(false);
@@ -52,7 +59,73 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     );
   };
 
+  // --- Camera Logic ---
+  
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      setCameraStream(stream);
+      setShowCameraModal(true);
+    } catch (err) {
+      console.error("Camera access denied", err);
+      alert("无法访问摄像头，请检查权限或使用文件上传。");
+    }
+  };
+
+  const stopCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+    }
+    setShowCameraModal(false);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0);
+        const base64Data = canvas.toDataURL('image/jpeg').split(',')[1];
+        stopCamera();
+        processBase64Image(base64Data, 'image/jpeg');
+      }
+    }
+  };
+
+  // Attach stream to video element when modal opens
+  React.useEffect(() => {
+    if (showCameraModal && videoRef.current && cameraStream) {
+      videoRef.current.srcObject = cameraStream;
+    }
+  }, [showCameraModal, cameraStream]);
+
+
   // --- Handlers ---
+
+  const processBase64Image = async (base64: string, mimeType: string) => {
+    setIsProcessing(true);
+    setProcessingStatus('正在识别图片...');
+    try {
+      const extractedWords = await extractWordsFromImage(base64, mimeType);
+      if (extractedWords.length > 0) {
+        const currentText = inputText.trim();
+        const newText = currentText ? `${currentText} ${extractedWords.join(' ')}` : extractedWords.join(' ');
+        setInputText(newText);
+      } else {
+        alert("未能识别出文字");
+      }
+    } catch (err) {
+      console.error(err);
+      setProcessingStatus('识别失败');
+    } finally {
+      setIsProcessing(false);
+      setProcessingStatus('');
+    }
+  };
 
   const handleAnalyzeWords = async () => {
     const words = getUniqueWords(inputText);
@@ -78,9 +151,14 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
         const res = results[draft.word];
         if (res) {
           let types = [...defaultTypes];
+          // Auto-remove unavailable types
           if (types.includes(QuestionType.DEFINITION) && !res.definitionData) {
             types = types.filter(t => t !== QuestionType.DEFINITION);
           }
+          if (types.includes(QuestionType.DEFINITION_MATCH) && !res.definitionMatchData) {
+            types = types.filter(t => t !== QuestionType.DEFINITION_MATCH);
+          }
+
           return { ...draft, analysis: res, enabledTypes: types, status: 'done' };
         } else {
           return { ...draft, status: 'error' };
@@ -126,42 +204,34 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     }
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (activeTab === EntryType.POEM) {
       alert("目前仅支持生字词图片识别，古诗请手动输入。");
-      e.target.value = ''; // Clear input
+      e.target.value = ''; 
       return;
     }
 
-    setIsProcessing(true);
-    setProcessingStatus('正在识别图片...');
-
-    try {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64String = (reader.result as string).split(',')[1];
-        const extractedWords = await extractWordsFromImage(base64String, file.type);
-        
-        if (extractedWords.length > 0) {
-          const currentText = inputText.trim();
-          const newText = currentText ? `${currentText} ${extractedWords.join(' ')}` : extractedWords.join(' ');
-          setInputText(newText);
-        }
-        setIsProcessing(false);
-        setProcessingStatus('');
-      };
-      reader.readAsDataURL(file);
-    } catch (err) {
-      console.error(err);
-      setProcessingStatus('识别失败');
-      setIsProcessing(false);
-    }
-    
-    // Clear the input value to allow selecting the same file again if needed
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = (reader.result as string).split(',')[1];
+      processBase64Image(base64String, file.type);
+    };
+    reader.readAsDataURL(file);
     e.target.value = '';
+  };
+
+  const handleCameraClick = () => {
+    // Detect mobile device approximately
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    
+    if (isMobile) {
+      cameraInputRef.current?.click();
+    } else {
+      startCamera();
+    }
   };
 
   const handleSaveAll = () => {
@@ -181,6 +251,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
         pinyin: draft.analysis.pinyin,
         createdAt: Date.now(),
         definitionData: draft.analysis.definitionData || undefined,
+        definitionMatchData: draft.analysis.definitionMatchData || undefined,
         poemData: draft.analysis.poemData,
         enabledTypes: draft.enabledTypes
       });
@@ -241,12 +312,13 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
               <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
 
               <button
-                onClick={() => cameraInputRef.current?.click()}
+                onClick={handleCameraClick}
                 className="p-2 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 transition-colors"
                 title="直接拍照"
               >
                 <Camera className="w-5 h-5" />
               </button>
+              {/* Native mobile capture input (hidden) */}
               <input type="file" ref={cameraInputRef} className="hidden" accept="image/*" capture="environment" onChange={handleImageUpload} />
             </div>
           </div>
@@ -278,7 +350,16 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
                 onChange={() => toggleDefaultType(QuestionType.DEFINITION)}
                 className="w-4 h-4 text-primary rounded border-gray-300 focus:ring-primary"
               />
-              <span className="text-sm text-gray-700">字义</span>
+              <span className="text-sm text-gray-700">释义</span>
+            </label>
+            <label className="flex items-center space-x-2 cursor-pointer select-none">
+              <input 
+                type="checkbox" 
+                checked={defaultTypes.includes(QuestionType.DEFINITION_MATCH)}
+                onChange={() => toggleDefaultType(QuestionType.DEFINITION_MATCH)}
+                className="w-4 h-4 text-primary rounded border-gray-300 focus:ring-primary"
+              />
+              <span className="text-sm text-gray-700">辨析</span>
             </label>
           </div>
 
@@ -373,7 +454,10 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
                            <button onClick={() => toggleType(draft.id, QuestionType.PINYIN)} className={`px-2 py-1 text-xs rounded border ${draft.enabledTypes.includes(QuestionType.PINYIN) ? 'bg-blue-100 text-blue-700' : 'bg-white'}`}>注音</button>
                            <button onClick={() => toggleType(draft.id, QuestionType.DICTATION)} className={`px-2 py-1 text-xs rounded border ${draft.enabledTypes.includes(QuestionType.DICTATION) ? 'bg-blue-100 text-blue-700' : 'bg-white'}`}>书写</button>
                            {draft.analysis?.definitionData && (
-                             <button onClick={() => toggleType(draft.id, QuestionType.DEFINITION)} className={`px-2 py-1 text-xs rounded border ${draft.enabledTypes.includes(QuestionType.DEFINITION) ? 'bg-blue-100 text-blue-700' : 'bg-white'}`}>字义</button>
+                             <button onClick={() => toggleType(draft.id, QuestionType.DEFINITION)} className={`px-2 py-1 text-xs rounded border ${draft.enabledTypes.includes(QuestionType.DEFINITION) ? 'bg-blue-100 text-blue-700' : 'bg-white'}`}>释义</button>
+                           )}
+                           {draft.analysis?.definitionMatchData && (
+                             <button onClick={() => toggleType(draft.id, QuestionType.DEFINITION_MATCH)} className={`px-2 py-1 text-xs rounded border ${draft.enabledTypes.includes(QuestionType.DEFINITION_MATCH) ? 'bg-blue-100 text-blue-700' : 'bg-white'}`}>辨析</button>
                            )}
                          </>
                        ) : (
@@ -392,6 +476,30 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
                 )}
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* PC Custom Camera Modal */}
+      {showCameraModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+          <div className="bg-white rounded-lg overflow-hidden shadow-2xl max-w-lg w-full">
+            <div className="p-4 bg-gray-900 text-white flex justify-between items-center">
+              <span className="font-bold flex items-center"><Camera className="w-5 h-5 mr-2" /> 拍照</span>
+              <button onClick={stopCamera}><X className="w-6 h-6" /></button>
+            </div>
+            <div className="relative bg-black aspect-video flex items-center justify-center">
+              <video ref={videoRef} autoPlay playsInline className="max-w-full max-h-[60vh]" />
+              <canvas ref={canvasRef} className="hidden" />
+            </div>
+            <div className="p-6 flex justify-center bg-gray-100">
+              <button 
+                onClick={capturePhoto} 
+                className="w-16 h-16 rounded-full bg-red-500 border-4 border-white shadow-lg hover:scale-105 transition-transform flex items-center justify-center"
+              >
+                <div className="w-14 h-14 rounded-full border-2 border-red-500"></div>
+              </button>
+            </div>
           </div>
         </div>
       )}

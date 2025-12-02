@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { AnalysisResult, EntryType } from "../types";
 
@@ -30,6 +31,8 @@ const itemSchemaProperties = {
     type: Type.STRING,
     description: "The correct pinyin for the word with tone marks. IMPORTANT: separate each character's pinyin with a space (e.g., 'jīng yì qiú jīng').",
   },
+  
+  // Standard Definition (Explanation)
   hasDefinitionQuestion: {
     type: Type.BOOLEAN,
     description: "Whether a multiple choice definition question can be generated.",
@@ -42,7 +45,7 @@ const itemSchemaProperties = {
   options: {
     type: Type.ARRAY,
     items: { type: Type.STRING },
-    description: "4 options for the meaning. One is correct, three are distractors.",
+    description: "4 options for the meaning in SIMPLIFIED CHINESE. One is correct, three are distractors.",
     nullable: true,
   },
   correctIndex: {
@@ -50,6 +53,23 @@ const itemSchemaProperties = {
     description: "The index (0-3) of the correct option.",
     nullable: true,
   },
+
+  // NEW: Definition Match (Same Meaning Usage)
+  hasMatchQuestion: {
+    type: Type.BOOLEAN,
+    description: "Whether we can generate a question finding another word with the SAME character meaning.",
+  },
+  matchOptions: {
+    type: Type.ARRAY,
+    items: { type: Type.STRING },
+    description: "4 Chinese words/idioms containing the targetChar. One must use targetChar with the SAME meaning as in the source word. Three must use targetChar with DIFFERENT meanings.",
+    nullable: true
+  },
+  matchCorrectIndex: {
+    type: Type.INTEGER,
+    description: "Index (0-3) of the word where targetChar has the SAME meaning as in the source word.",
+    nullable: true
+  }
 };
 
 const batchAnalysisSchema: Schema = {
@@ -60,7 +80,7 @@ const batchAnalysisSchema: Schema = {
       items: {
         type: Type.OBJECT,
         properties: itemSchemaProperties,
-        required: ["pinyin", "hasDefinitionQuestion", "word"],
+        required: ["pinyin", "word"],
       },
     },
   },
@@ -98,7 +118,7 @@ const poemSchema: Schema = {
           correctIndex: { type: Type.INTEGER },
         }
       },
-      description: "Pick 1-2 difficult characters to create definition questions."
+      description: "Pick 1-2 difficult characters to create definition questions. Options MUST be in Simplified Chinese."
     }
   },
   required: ["title", "author", "lines"]
@@ -118,12 +138,13 @@ const ocrSchema: Schema = {
 // --- FUNCTIONS ---
 
 export const analyzeWord = async (word: string): Promise<AnalysisResult> => {
-  // Single word analysis logic (mostly replaced by batch, but kept for safety)
+   // Legacy single word - fallback to empty
   return { 
     type: EntryType.WORD, 
     word, 
     pinyin: "error", 
-    definitionData: null 
+    definitionData: null,
+    definitionMatchData: null
   };
 };
 
@@ -138,9 +159,15 @@ export const analyzeWordsBatch = async (words: string[]): Promise<Record<string,
   try {
     const prompt = `
       Analyze the following list of Chinese words: ${JSON.stringify(words)}.
-      For each word:
-      1. Provide Pinyin with tones. MUST separate each character's pinyin with a space.
-      2. Identify the most challenging character and create a definition multiple-choice question.
+      
+      For each word, perform these tasks:
+      1. **Pinyin**: Provide Pinyin with tones. Separate each character's pinyin with a space.
+      2. **Definition Test**: Identify the most challenging character (targetChar). Create a multiple-choice question for its MEANING. 
+         - **CRITICAL**: The options must be in SIMPLIFIED CHINESE. Do NOT use English.
+      3. **Definition Match Test (One-character multi-meaning)**: For the SAME targetChar, find 4 other Chinese words/idioms containing it.
+         - One word must use the targetChar with the SAME meaning as in the source word (Correct Answer).
+         - Three words must use the targetChar with DIFFERENT meanings (Distractors).
+      
       Return a JSON object with an 'items' array.
     `;
 
@@ -183,6 +210,7 @@ export const analyzePoem = async (input: string): Promise<AnalysisResult | null>
       2. Split into lines.
       3. Create 1-2 "Fill in the blank" questions from famous lines (hide 2-4 chars).
       4. Create 1-2 "Definition" questions for difficult characters.
+         - **CRITICAL**: The definition options must be in SIMPLIFIED CHINESE.
     `;
 
     const response = await ai.models.generateContent({
@@ -198,9 +226,10 @@ export const analyzePoem = async (input: string): Promise<AnalysisResult | null>
     
     return {
       type: EntryType.POEM,
-      word: data.title, // Use title as the main "word" field
-      pinyin: data.author, // Use pinyin field to store author temporarily for compatibility
+      word: data.title,
+      pinyin: data.author,
       definitionData: null,
+      definitionMatchData: null,
       poemData: {
         title: data.title,
         dynasty: data.dynasty,
@@ -254,6 +283,11 @@ function mapDataToResult(data: any): AnalysisResult {
       targetChar: data.targetChar || data.word?.[0] || '?',
       options: data.options,
       correctIndex: typeof data.correctIndex === 'number' ? data.correctIndex : 0,
+    } : null,
+    definitionMatchData: data.hasMatchQuestion && data.matchOptions && data.matchOptions.length === 4 ? {
+      targetChar: data.targetChar || data.word?.[0] || '?',
+      options: data.matchOptions,
+      correctIndex: typeof data.matchCorrectIndex === 'number' ? data.matchCorrectIndex : 0,
     } : null
   };
 }
