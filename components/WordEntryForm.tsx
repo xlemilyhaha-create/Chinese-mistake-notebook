@@ -20,6 +20,8 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<string>('');
   const [drafts, setDrafts] = useState<DraftEntry[]>([]);
+  // Default exam types selected by the user
+  const [defaultTypes, setDefaultTypes] = useState<QuestionType[]>([QuestionType.PINYIN, QuestionType.DICTATION]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Parse input text into unique words
@@ -31,6 +33,14 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     ));
   };
 
+  const toggleDefaultType = (type: QuestionType) => {
+    setDefaultTypes(prev => 
+      prev.includes(type) 
+        ? prev.filter(t => t !== type) 
+        : [...prev, type]
+    );
+  };
+
   const handleAnalyze = async () => {
     const words = getUniqueWords(inputText);
     if (words.length === 0) return;
@@ -38,16 +48,13 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     setIsProcessing(true);
     setProcessingStatus('正在批量分析字词...');
     
-    // Clear previous drafts if restarting, or append? Let's replace for now to avoid duplicates confusion
-    // But logically, if user types more, they might want to add. Let's just analyze the new text.
-    
     try {
-      // 1. Create initial drafts
+      // 1. Create initial drafts using the USER SELECTED defaultTypes
       const newDrafts: DraftEntry[] = words.map(w => ({
         id: crypto.randomUUID(),
         word: w,
         analysis: null,
-        enabledTypes: [QuestionType.PINYIN, QuestionType.DICTATION],
+        enabledTypes: [...defaultTypes], // Use the state here
         status: 'analyzing'
       }));
       setDrafts(newDrafts);
@@ -59,15 +66,21 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
       setDrafts(prev => prev.map(draft => {
         const res = results[draft.word];
         if (res) {
-          const types = [QuestionType.PINYIN, QuestionType.DICTATION];
-          if (res.definitionData) types.push(QuestionType.DEFINITION);
+          // Start with user preferences
+          let types = [...defaultTypes];
+          
+          // CRITICAL: If user wanted DEFINITION but API returned null, remove it
+          if (types.includes(QuestionType.DEFINITION) && !res.definitionData) {
+            types = types.filter(t => t !== QuestionType.DEFINITION);
+          }
+
           return { ...draft, analysis: res, enabledTypes: types, status: 'done' };
         } else {
           return { ...draft, status: 'error' };
         }
       }));
       
-      // Clear input after successful analysis to indicate "moved to staging"
+      // Clear input after successful analysis
       setInputText('');
 
     } catch (err) {
@@ -114,6 +127,12 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
   const handleSaveAll = () => {
     const validDrafts = drafts.filter(d => d.status === 'done' && d.analysis);
     
+    // Check if analysis returned nothing (likely API key issue)
+    if (validDrafts.length === 0 && drafts.length > 0 && drafts.every(d => d.status === 'error')) {
+      alert("警告：未检测到有效结果。请检查 Vercel 环境变量 API_KEY 配置是否正确，或尝试刷新页面。");
+      return;
+    }
+
     validDrafts.forEach(draft => {
       if (!draft.analysis) return;
       onAddWord({
@@ -176,8 +195,40 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
             />
           </div>
         </div>
+
+        {/* Default Exam Types Selection */}
+        <div className="flex flex-wrap items-center gap-4 mt-3 pl-1">
+          <span className="text-sm text-gray-600 font-medium">默认考点:</span>
+          <label className="flex items-center space-x-2 cursor-pointer select-none">
+            <input 
+              type="checkbox" 
+              checked={defaultTypes.includes(QuestionType.PINYIN)}
+              onChange={() => toggleDefaultType(QuestionType.PINYIN)}
+              className="w-4 h-4 text-primary rounded border-gray-300 focus:ring-primary"
+            />
+            <span className="text-sm text-gray-700">拼音</span>
+          </label>
+          <label className="flex items-center space-x-2 cursor-pointer select-none">
+            <input 
+              type="checkbox" 
+              checked={defaultTypes.includes(QuestionType.DICTATION)}
+              onChange={() => toggleDefaultType(QuestionType.DICTATION)}
+              className="w-4 h-4 text-primary rounded border-gray-300 focus:ring-primary"
+            />
+            <span className="text-sm text-gray-700">书写</span>
+          </label>
+          <label className="flex items-center space-x-2 cursor-pointer select-none">
+            <input 
+              type="checkbox" 
+              checked={defaultTypes.includes(QuestionType.DEFINITION)}
+              onChange={() => toggleDefaultType(QuestionType.DEFINITION)}
+              className="w-4 h-4 text-primary rounded border-gray-300 focus:ring-primary"
+            />
+            <span className="text-sm text-gray-700">字义</span>
+          </label>
+        </div>
         
-        <div className="flex justify-between items-center mt-3">
+        <div className="flex justify-between items-center mt-4 border-t pt-3">
           <div className="text-sm text-gray-500">
              {processingStatus && (
                <span className="flex items-center text-primary">

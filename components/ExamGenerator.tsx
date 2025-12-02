@@ -9,6 +9,7 @@ interface ExamGeneratorProps {
 
 const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
   const [selectedDate, setSelectedDate] = useState<string>('');
+  const [isPrinting, setIsPrinting] = useState(false);
   
   // Get unique dates available in the word list
   const availableDates = useMemo(() => {
@@ -36,10 +37,17 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
   }, [filteredWords]);
 
   const handlePrint = () => {
-    // Small timeout to ensure DOM is ready if we were doing any dynamic rendering
+    setIsPrinting(true);
+    // Small timeout to ensure DOM is ready and state updates
     setTimeout(() => {
-      window.print();
-    }, 100);
+      try {
+        window.print();
+      } catch (e) {
+        alert("调用打印失败，请尝试使用浏览器菜单中的打印功能。");
+      } finally {
+        setIsPrinting(false);
+      }
+    }, 500);
   };
 
   // Helper to render aligned pinyin boxes
@@ -72,7 +80,7 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
   };
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-screen flex flex-col bg-gray-50">
       {/* Control Panel - Hidden when printing via CSS */}
       <div className="bg-white border-b p-4 flex flex-col md:flex-row items-center justify-between gap-4 no-print shadow-sm z-10 shrink-0">
         <div className="flex items-center gap-4 w-full md:w-auto">
@@ -102,10 +110,11 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
           </div>
           <button 
             onClick={handlePrint}
-            className="bg-primary hover:bg-indigo-700 text-white px-5 py-2 rounded-lg shadow flex items-center font-medium transition-colors"
+            disabled={isPrinting}
+            className="bg-primary hover:bg-indigo-700 text-white px-5 py-2 rounded-lg shadow flex items-center font-medium transition-colors disabled:opacity-70"
           >
             <Printer className="w-5 h-5 mr-2" />
-            打印 / 下载PDF
+            {isPrinting ? '正在调用打印...' : '打印 / 下载PDF'}
           </button>
         </div>
       </div>

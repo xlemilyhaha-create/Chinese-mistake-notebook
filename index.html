@@ -34,6 +34,11 @@
           margin: 15mm;
         }
         
+        body {
+          overflow: visible !important;
+          height: auto !important;
+        }
+
         /* HIDE EVERYTHING by default */
         body * {
           visibility: hidden;
@@ -92,8 +97,8 @@
 }
 </script>
 </head>
-  <body class="bg-gray-50 text-gray-900 h-screen overflow-hidden">
-    <div id="root" class="h-full"></div>
+  <body class="bg-gray-50 text-gray-900">
+    <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>

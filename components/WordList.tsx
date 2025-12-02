@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { WordEntry, QuestionType } from '../types';
-import { Trash2, Calendar, Edit2, Check, X } from 'lucide-react';
+import { Trash2, Calendar, Edit2, Check, X, ChevronDown } from 'lucide-react';
 
 interface WordListProps {
   words: WordEntry[];
@@ -8,9 +8,12 @@ interface WordListProps {
   onUpdate: (id: string, updates: Partial<WordEntry>) => void;
 }
 
+const PAGE_SIZE = 24;
+
 const WordList: React.FC<WordListProps> = ({ words, onDelete, onUpdate }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editState, setEditState] = useState<WordEntry | null>(null);
+  const [page, setPage] = useState(1);
 
   const startEdit = (word: WordEntry) => {
     setEditingId(word.id);
@@ -39,6 +42,10 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onUpdate }) => {
     setEditState({ ...editState, enabledTypes: next });
   };
 
+  const handleLoadMore = () => {
+    setPage(p => p + 1);
+  };
+
   if (words.length === 0) {
     return (
       <div className="text-center py-12 bg-gray-50 rounded-xl border border-dashed border-gray-300">
@@ -47,11 +54,14 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onUpdate }) => {
     );
   }
 
+  const displayedWords = words.slice(0, page * PAGE_SIZE);
+  const hasMore = words.length > displayedWords.length;
+
   return (
     <div className="space-y-4">
       <h3 className="text-md font-semibold text-gray-700">最近录入 ({words.length})</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {words.map((word) => {
+        {displayedWords.map((word) => {
           const isEditing = editingId === word.id;
           const displayWord = isEditing && editState ? editState : word;
 
@@ -157,6 +167,18 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onUpdate }) => {
           );
         })}
       </div>
+      
+      {hasMore && (
+        <div className="flex justify-center pt-4 pb-8">
+          <button
+            onClick={handleLoadMore}
+            className="flex items-center gap-2 bg-white border border-gray-300 text-gray-600 px-6 py-2 rounded-full hover:bg-gray-50 transition-colors shadow-sm"
+          >
+            <ChevronDown className="w-4 h-4" />
+            加载更多
+          </button>
+        </div>
+      )}
     </div>
   );
 };
