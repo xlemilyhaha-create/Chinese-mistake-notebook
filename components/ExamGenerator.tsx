@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { WordEntry, QuestionType } from '../types';
 import { Printer, ArrowLeft, Sliders, AlertCircle } from 'lucide-react';
