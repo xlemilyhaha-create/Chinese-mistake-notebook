@@ -13,16 +13,6 @@ export enum QuestionType {
   POEM_DEFINITION = 'POEM_DEFINITION' // Poem -> Select Meaning of character
 }
 
-export enum AIProvider {
-  GEMINI = 'GEMINI',
-  DEEPSEEK = 'DEEPSEEK'
-}
-
-export interface AISettings {
-  provider: AIProvider;
-  deepseekKey?: string;
-}
-
 export interface DefinitionQuestionData {
   targetChar: string; // The specific character being tested (e.g., "益" in "精益求精")
   options: string[]; // 4 options (Definitions)

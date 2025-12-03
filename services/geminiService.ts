@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type, Schema } from "@google/genai";
-import { AnalysisResult, EntryType, AIProvider, AISettings } from "../types";
+import { AnalysisResult, EntryType } from "../types";
 
 // --- CLIENT-SIDE SCHEMAS ---
 const itemSchemaProperties = {
@@ -69,91 +69,6 @@ const cleanJson = (text: string | undefined): string => {
     return cleaned.substring(firstBrace, lastBrace + 1);
   }
   return cleaned;
-};
-
-const getSettings = (): AISettings => {
-  const saved = localStorage.getItem('yuwen_ai_settings');
-  if (saved) {
-    try {
-      return JSON.parse(saved);
-    } catch (e) {}
-  }
-  return { provider: AIProvider.GEMINI }; // Default
-};
-
-// --- DEEPSEEK ANALYZER ---
-
-const analyzeWithDeepSeek = async (payload: { type: string, text: string }) => {
-  const settings = getSettings();
-  if (!settings.deepseekKey) {
-    throw new Error("请在设置中配置 DeepSeek API Key");
-  }
-
-  let prompt = '';
-  if (payload.type === 'word') {
-    prompt = `
-      Analyze the Chinese word: "${payload.text}".
-      Return a valid JSON object ONLY, with no markdown code blocks.
-      Structure:
-      {
-        "word": "${payload.text}",
-        "pinyin": "string (space separated tones)",
-        "hasDefinitionQuestion": boolean,
-        "targetChar": "string (char to test)",
-        "options": ["string", "string", "string", "string"],
-        "correctIndex": number (0-3),
-        "hasMatchQuestion": boolean,
-        "matchOptions": ["string", "string", "string", "string"] (4 words containing targetChar),
-        "matchCorrectIndex": number (0-3)
-      }
-      If unable to generate questions, set boolean flags to false.
-      Options must be in Simplified Chinese.
-    `;
-  } else if (payload.type === 'poem') {
-    prompt = `
-      Analyze this Chinese poem: "${payload.text}".
-      Return a valid JSON object ONLY.
-      Structure:
-      {
-        "title": "string",
-        "dynasty": "string",
-        "author": "string",
-        "content": "string",
-        "lines": ["string", "string"...],
-        "fillQuestions": [
-          {"lineIndex": number, "pre": "string", "answer": "string", "post": "string"}
-        ],
-        "definitionQuestions": [
-          {"lineIndex": number, "targetChar": "string", "options": ["string"...], "correctIndex": number}
-        ]
-      }
-    `;
-  }
-
-  const response = await fetch('https://api.deepseek.com/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${settings.deepseekKey}`
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [
-        { role: "system", content: "You are a helpful Chinese language tutor. output JSON only." },
-        { role: "user", content: prompt }
-      ],
-      stream: false
-    })
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`DeepSeek API Error: ${err}`);
-  }
-
-  const result = await response.json();
-  const content = result.choices[0].message.content;
-  return JSON.parse(cleanJson(content));
 };
 
 // --- GEMINI ANALYZER (Backend Proxy with Client Fallback) ---
@@ -228,15 +143,7 @@ const analyzeWithGeminiBackend = async (payload: any) => {
 
 export const analyzeWord = async (word: string): Promise<AnalysisResult> => {
   try {
-    const settings = getSettings();
-    let data;
-
-    if (settings.provider === AIProvider.DEEPSEEK) {
-      data = await analyzeWithDeepSeek({ type: 'word', text: word });
-    } else {
-      data = await analyzeWithGeminiBackend({ type: 'word', text: word });
-    }
-
+    const data = await analyzeWithGeminiBackend({ type: 'word', text: word });
     return mapDataToResult(data);
   } catch (error) {
     console.error(`Failed to analyze word: ${word}`, error);
@@ -254,15 +161,7 @@ export const analyzeWordsBatch = async (words: string[]): Promise<Record<string,
 
 export const analyzePoem = async (input: string): Promise<AnalysisResult | null> => {
   try {
-    const settings = getSettings();
-    let data;
-
-    if (settings.provider === AIProvider.DEEPSEEK) {
-      data = await analyzeWithDeepSeek({ type: 'poem', text: input });
-    } else {
-      data = await analyzeWithGeminiBackend({ type: 'poem', text: input });
-    }
-
+    const data = await analyzeWithGeminiBackend({ type: 'poem', text: input });
     return {
       type: EntryType.POEM,
       word: data.title,
@@ -287,14 +186,6 @@ export const analyzePoem = async (input: string): Promise<AnalysisResult | null>
 
 export const extractWordsFromImage = async (base64Data: string, mimeType: string): Promise<string[]> => {
   try {
-    const settings = getSettings();
-    // DeepSeek V3 (Chat) usually doesn't support Image input. Fallback to Gemini or error.
-    if (settings.provider === AIProvider.DEEPSEEK) {
-      console.warn("DeepSeek does not support OCR yet, attempting Gemini fallback...");
-      const data = await analyzeWithGeminiBackend({ type: 'ocr', image: base64Data });
-      return data.words || [];
-    }
-
     const data = await analyzeWithGeminiBackend({ type: 'ocr', image: base64Data });
     return data.words || [];
   } catch (error) {
