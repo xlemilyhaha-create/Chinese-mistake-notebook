@@ -74,10 +74,11 @@ const cleanJson = (text: string | undefined): string => {
 // --- GEMINI ANALYZER (Backend Proxy with Client Fallback) ---
 
 const analyzeWithGeminiBackend = async (payload: any) => {
-  // Use AbortController to enforce a timeout (e.g., 5 seconds)
-  // This ensures the preview environment doesn't hang forever waiting for a non-existent backend
+  // Use AbortController to enforce a timeout
+  // INCREASED TO 60 SECONDS. 
+  // 5 seconds was too short for Vercel/Gemini cold starts, causing premature fallback to Client SDK (which fails in WeChat).
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  const timeoutId = setTimeout(() => controller.abort(), 60000); 
 
   try {
     const response = await fetch('/api/analyze', {
@@ -89,22 +90,28 @@ const analyzeWithGeminiBackend = async (payload: any) => {
     clearTimeout(timeoutId);
 
     // Strict check: Preview environment often returns 200 OK with HTML content (index.html) for unknown routes
-    // We MUST treat HTML response as a failure of the backend API
     const contentType = response.headers.get("content-type");
     if (!response.ok || !contentType || !contentType.includes("application/json")) {
-      throw new Error("Backend API not found or returned HTML");
+      // If server error (500) or HTML returned (404/SPA fallback), we assume backend is unavailable
+      throw new Error(`Backend API failure: ${response.status} ${response.statusText}`);
     }
 
     return await response.json();
 
-  } catch (error) {
-    console.warn("Backend API unavailable (Preview Mode or Timeout), switching to Client-Side SDK Fallback...", error);
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    console.warn("Backend API unavailable or timed out. Switching to Client-Side SDK Fallback...", error);
     
     // --- FALLBACK: Client-Side SDK ---
-    // This part runs only if backend fails (e.g. in right-side Preview Canvas)
+    // This runs ONLY if backend fails (e.g. Preview Canvas, or Vercel timeout)
+    // NOTE: This fallback WILL FAIL in WeChat/China due to GFW. 
+    // The goal is to make the Backend path (try block) work 100% of the time in Production.
+    
     const clientApiKey = process.env.API_KEY;
     if (!clientApiKey) {
-      throw new Error("后端服务连接失败，且未配置前端 API Key (process.env.API_KEY is missing)");
+      // If we don't have a key, we can't do anything. 
+      // Propagate the original backend error so the UI shows "Analysis Failed" instead of hanging.
+      throw new Error(`分析服务连接失败，且未配置前端 Key。后端错误: ${error.message}`);
     }
 
     const ai = new GoogleGenAI({ apiKey: clientApiKey });
