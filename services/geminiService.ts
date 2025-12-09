@@ -1,83 +1,10 @@
 
-import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { AnalysisResult, EntryType } from "../types";
 
-// --- CLIENT-SIDE SCHEMAS ---
-const itemSchemaProperties = {
-  word: { type: Type.STRING },
-  pinyin: { type: Type.STRING },
-  hasDefinitionQuestion: { type: Type.BOOLEAN },
-  targetChar: { type: Type.STRING, nullable: true },
-  options: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true },
-  correctIndex: { type: Type.INTEGER, nullable: true },
-  hasMatchQuestion: { type: Type.BOOLEAN },
-  matchOptions: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true },
-  matchCorrectIndex: { type: Type.INTEGER, nullable: true }
-};
-
-const singleAnalysisSchema: Schema = {
-  type: Type.OBJECT,
-  properties: itemSchemaProperties,
-  required: ["pinyin", "word"],
-};
-
-const poemSchema: Schema = {
-  type: Type.OBJECT,
-  properties: {
-    title: { type: Type.STRING },
-    dynasty: { type: Type.STRING },
-    author: { type: Type.STRING },
-    content: { type: Type.STRING },
-    lines: { type: Type.ARRAY, items: { type: Type.STRING } },
-    fillQuestions: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          lineIndex: { type: Type.INTEGER },
-          pre: { type: Type.STRING },
-          answer: { type: Type.STRING },
-          post: { type: Type.STRING },
-        }
-      }
-    },
-    definitionQuestions: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          lineIndex: { type: Type.INTEGER },
-          targetChar: { type: Type.STRING },
-          options: { type: Type.ARRAY, items: { type: Type.STRING } },
-          correctIndex: { type: Type.INTEGER },
-        }
-      }
-    }
-  },
-  required: ["title", "author", "lines"]
-};
-
-// --- HELPERS ---
-
-const cleanJson = (text: string | undefined): string => {
-  if (!text) return '{}';
-  let cleaned = text.trim();
-  cleaned = cleaned.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
-  const firstBrace = cleaned.indexOf('{');
-  const lastBrace = cleaned.lastIndexOf('}');
-  if (firstBrace !== -1 && lastBrace !== -1) {
-    return cleaned.substring(firstBrace, lastBrace + 1);
-  }
-  return cleaned;
-};
-
-// --- GEMINI ANALYZER (Backend Proxy with Client Fallback) ---
+// --- GEMINI ANALYZER (Pure Backend Proxy) ---
 
 const analyzeWithGeminiBackend = async (payload: any) => {
-  // Use AbortController to enforce a timeout
-  // We set this to 60s. Vercel Free tier limits functions to 10s.
-  // If Vercel kills it at 10s, this fetch will receive a 504 error.
-  // The catch block below will then handle the 504 and switch to client-side.
+  // Use AbortController to enforce a timeout (60s to match Vercel function limits)
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 60000); 
 
@@ -90,10 +17,10 @@ const analyzeWithGeminiBackend = async (payload: any) => {
     });
     clearTimeout(timeoutId);
 
-    // Strict check: Preview environment often returns 200 OK with HTML content (index.html) for unknown routes
     const contentType = response.headers.get("content-type");
     if (!response.ok || !contentType || !contentType.includes("application/json")) {
-      // If server error (500/504) or HTML returned (404/SPA fallback), we assume backend is unavailable
+      // If server error or HTML returned (Preview environment), just throw.
+      // We do NOT fallback to client-side key because we want to be secure.
       throw new Error(`Backend API failure: ${response.status} ${response.statusText}`);
     }
 
@@ -101,46 +28,9 @@ const analyzeWithGeminiBackend = async (payload: any) => {
 
   } catch (error: any) {
     clearTimeout(timeoutId);
-    console.warn("Backend API unavailable or timed out. Switching to Client-Side SDK Fallback...", error);
-    
-    // --- FALLBACK: Client-Side SDK ---
-    // This runs ONLY if backend fails (e.g. Preview Canvas, or Vercel timeout)
-    
-    const clientApiKey = process.env.API_KEY;
-    if (!clientApiKey) {
-      // If we don't have a key, we can't do anything. 
-      // Propagate the original backend error so the UI shows "Analysis Failed" instead of hanging.
-      throw new Error(`分析服务连接失败，且未配置前端 Key。后端错误: ${error.message}`);
-    }
-
-    const ai = new GoogleGenAI({ apiKey: clientApiKey });
-    const model = 'gemini-2.5-flash';
-    
-    let schema: Schema | undefined;
-    let prompt = '';
-    let parts: any[] = [];
-    
-    if (payload.type === 'word') {
-       schema = singleAnalysisSchema;
-       prompt = `Analyze word "${payload.text}". Pinyin, Definition, Match questions. JSON.`;
-       parts = [{ text: prompt }];
-    } else if (payload.type === 'poem') {
-       schema = poemSchema;
-       prompt = `Analyze poem "${payload.text}". Title, Author, Dynasty, Content. Fill/Def questions. JSON.`;
-       parts = [{ text: prompt }];
-    } else if (payload.type === 'ocr') {
-       schema = { type: Type.OBJECT, properties: { words: { type: Type.ARRAY, items: { type: Type.STRING } } } };
-       prompt = "List all chinese words.";
-       parts = [{ inlineData: { mimeType: 'image/jpeg', data: payload.image } }, { text: prompt }];
-    }
-
-    const genRes = await ai.models.generateContent({
-      model,
-      contents: { parts },
-      config: { responseMimeType: 'application/json', responseSchema: schema }
-    });
-    
-    return JSON.parse(cleanJson(genRes.text));
+    console.error("Analysis Error:", error);
+    // Re-throw to let the UI show the error state
+    throw error;
   }
 };
 
@@ -153,12 +43,15 @@ export const analyzeWord = async (word: string): Promise<AnalysisResult> => {
     return mapDataToResult(data);
   } catch (error) {
     console.error(`Failed to analyze word: ${word}`, error);
+    // Return error state so UI shows red icon
     return { type: EntryType.WORD, word, pinyin: "Error", definitionData: null, definitionMatchData: null };
   }
 };
 
 export const analyzeWordsBatch = async (words: string[]): Promise<Record<string, AnalysisResult>> => {
   const results: Record<string, AnalysisResult> = {};
+  // Process sequentially or in small parallel batches to avoid overwhelming the server
+  // but here we just call analyzeWord which calls the backend
   for (const word of words) {
     results[word] = await analyzeWord(word);
   }
