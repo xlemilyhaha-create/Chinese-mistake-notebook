@@ -75,8 +75,9 @@ const cleanJson = (text: string | undefined): string => {
 
 const analyzeWithGeminiBackend = async (payload: any) => {
   // Use AbortController to enforce a timeout
-  // INCREASED TO 60 SECONDS. 
-  // 5 seconds was too short for Vercel/Gemini cold starts, causing premature fallback to Client SDK (which fails in WeChat).
+  // We set this to 60s. Vercel Free tier limits functions to 10s.
+  // If Vercel kills it at 10s, this fetch will receive a 504 error.
+  // The catch block below will then handle the 504 and switch to client-side.
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 60000); 
 
@@ -92,7 +93,7 @@ const analyzeWithGeminiBackend = async (payload: any) => {
     // Strict check: Preview environment often returns 200 OK with HTML content (index.html) for unknown routes
     const contentType = response.headers.get("content-type");
     if (!response.ok || !contentType || !contentType.includes("application/json")) {
-      // If server error (500) or HTML returned (404/SPA fallback), we assume backend is unavailable
+      // If server error (500/504) or HTML returned (404/SPA fallback), we assume backend is unavailable
       throw new Error(`Backend API failure: ${response.status} ${response.statusText}`);
     }
 
@@ -104,8 +105,6 @@ const analyzeWithGeminiBackend = async (payload: any) => {
     
     // --- FALLBACK: Client-Side SDK ---
     // This runs ONLY if backend fails (e.g. Preview Canvas, or Vercel timeout)
-    // NOTE: This fallback WILL FAIL in WeChat/China due to GFW. 
-    // The goal is to make the Backend path (try block) work 100% of the time in Production.
     
     const clientApiKey = process.env.API_KEY;
     if (!clientApiKey) {
@@ -127,7 +126,7 @@ const analyzeWithGeminiBackend = async (payload: any) => {
        parts = [{ text: prompt }];
     } else if (payload.type === 'poem') {
        schema = poemSchema;
-       prompt = `Analyze poem "${payload.text}". Title, Author, Fill/Def questions. JSON.`;
+       prompt = `Analyze poem "${payload.text}". Title, Author, Dynasty, Content. Fill/Def questions. JSON.`;
        parts = [{ text: prompt }];
     } else if (payload.type === 'ocr') {
        schema = { type: Type.OBJECT, properties: { words: { type: Type.ARRAY, items: { type: Type.STRING } } } };

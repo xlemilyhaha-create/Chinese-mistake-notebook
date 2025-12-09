@@ -80,7 +80,7 @@ const cleanJson = (text) => {
 };
 
 export default async function handler(req, res) {
-  // CORS Handling (Optional for Vercel, but good practice)
+  // CORS Handling
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -108,43 +108,27 @@ export default async function handler(req, res) {
     const { type, text, image } = req.body;
 
     let model = 'gemini-2.5-flash';
-    let prompt = '';
-    let schema = null;
     let parts = [];
+    let schema = null;
 
     switch (type) {
       case 'word':
-        prompt = `
-          Analyze the Chinese word: "${text}".
-          1. Provide Pinyin with tones (space separated).
-          2. Create Definition Test (Meaning).
-          3. Create Definition Match Test (Same character meaning).
-          Options must be in Simplified Chinese.
-        `;
+        // Concise prompt to save time
+        parts = [{ text: `Analyze word "${text}". JSON output: pinyin, definition test, definition match test.` }];
         schema = singleAnalysisSchema;
-        parts = [{ text: prompt }];
         break;
 
       case 'poem':
-        prompt = `
-          Analyze this Chinese poem text/request: "${text}".
-          1. Identify the Title, Author, Dynasty, and content.
-          2. Split into lines.
-          3. Create 1-2 "Fill in the blank" questions.
-          4. Create 1-2 "Definition" questions.
-          Options must be in SIMPLIFIED CHINESE.
-        `;
+        parts = [{ text: `Analyze poem "${text}". JSON output: title, author, fill questions, definition questions.` }];
         schema = poemSchema;
-        parts = [{ text: prompt }];
         break;
 
       case 'ocr':
-        prompt = "Identify all Chinese vocabulary words, idioms, or distinct terms in this image. Return a simple list.";
-        schema = ocrSchema;
         parts = [
           { inlineData: { mimeType: 'image/jpeg', data: image } },
-          { text: prompt }
+          { text: "List Chinese words/idioms." }
         ];
+        schema = ocrSchema;
         break;
 
       default:
