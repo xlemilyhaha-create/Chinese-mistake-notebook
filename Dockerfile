@@ -23,7 +23,7 @@ WORKDIR /app
 
 # 安装生产依赖
 COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
 
 # 复制构建产物和必要文件
 COPY --from=builder /app/dist ./dist
