@@ -8,7 +8,8 @@ WORKDIR /app
 COPY package*.json ./
 
 # 安装依赖（包括开发依赖，用于构建）
-RUN npm ci
+# 使用 --verbose 输出详细日志，便于排查问题
+RUN npm ci --verbose || (echo "npm ci failed, retrying..." && npm ci --verbose)
 
 # 复制源代码
 COPY . .
@@ -23,7 +24,7 @@ WORKDIR /app
 
 # 安装生产依赖
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev --verbose && npm cache clean --force
 
 # 复制构建产物和必要文件
 COPY --from=builder /app/dist ./dist
