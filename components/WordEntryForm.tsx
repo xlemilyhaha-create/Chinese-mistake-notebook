@@ -151,18 +151,34 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     const CONCURRENCY_LIMIT = 3;
     let currentIndex = 0;
     let completedCount = 0;
+    let activeCount = 0;
     
     const processNext = async () => {
-      if (currentIndex >= newDrafts.length) return;
+      // 检查是否还有待处理的项
+      if (currentIndex >= newDrafts.length) {
+        activeCount--;
+        // 如果所有任务都完成了
+        if (activeCount === 0 && completedCount >= newDrafts.length) {
+          setIsProcessing(false);
+          setProcessingStatus('');
+        }
+        return;
+      }
       
       const myIndex = currentIndex++;
       const draft = newDrafts[myIndex];
+      activeCount++;
 
       // Update status to analyzing
       setDrafts(prev => prev.map(d => d.id === draft.id ? { ...d, status: 'analyzing' } : d));
+      setProcessingStatus(`正在分析 "${draft.word}"... (${completedCount}/${newDrafts.length})`);
+      
+      console.log(`[队列] 开始处理: ${draft.word}, 当前索引: ${myIndex}, 已完成: ${completedCount}, 活跃: ${activeCount}`);
 
       try {
+        console.log(`[分析] 开始分析词条: ${draft.word}`);
         const res = await analyzeWord(draft.word);
+        console.log(`[分析] 完成: ${draft.word}`, res);
         
         // Check if result contains error
         const hasError = (res as any).error || res.pinyin === "Error";
@@ -194,6 +210,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
           return { ...d, analysis: res, enabledTypes: types, status: 'done', error: undefined };
         }));
       } catch (e: any) {
+        console.error(`分析失败: ${draft.word}`, e);
         setDrafts(prev => prev.map(d => d.id === draft.id ? { 
           ...d, 
           status: 'error',
@@ -205,25 +222,65 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
         } : d));
       } finally {
         completedCount++;
+        activeCount--;
         setProcessingStatus(`正在分析... (${completedCount}/${newDrafts.length})`);
-        // Trigger next in queue
-        if (currentIndex < newDrafts.length) {
-          await processNext();
+        
+        // 如果所有任务都完成了
+        if (completedCount >= newDrafts.length) {
+          setIsProcessing(false);
+          setProcessingStatus('');
+        } else {
+          // Trigger next in queue (不等待，避免阻塞)
+          if (currentIndex < newDrafts.length) {
+            processNext().catch(error => {
+              console.error('处理下一个任务时出错:', error);
+            });
+          }
         }
       }
     };
 
     // Start initial pool
+    console.log(`[队列] 初始化队列，共 ${newDrafts.length} 个词条，并发限制: ${CONCURRENCY_LIMIT}`);
+    
+    // 确保状态立即更新
     setProcessingStatus(`正在分析... (0/${newDrafts.length})`);
-    const initialPromises = [];
-    for (let i = 0; i < CONCURRENCY_LIMIT && i < newDrafts.length; i++) {
-      initialPromises.push(processNext());
-    }
     
-    await Promise.all(initialPromises);
+    // 使用 setTimeout 确保状态更新后再启动任务
+    setTimeout(() => {
+      // 立即启动初始任务，不等待 Promise.all
+      for (let i = 0; i < CONCURRENCY_LIMIT && i < newDrafts.length; i++) {
+        console.log(`[队列] 启动任务 ${i + 1}`);
+        processNext().catch(error => {
+          console.error('[队列] 处理错误:', error);
+          // 即使出错也继续处理其他任务
+          completedCount++;
+          activeCount--;
+          if (currentIndex < newDrafts.length) {
+            setTimeout(() => processNext(), 1000);
+          }
+        });
+      }
+    }, 100);
     
-    setIsProcessing(false);
-    setProcessingStatus('');
+    // 设置超时保护，防止队列永远卡住
+    const timeoutId = setTimeout(() => {
+      if (completedCount < newDrafts.length) {
+        console.warn('分析超时，强制结束');
+        setIsProcessing(false);
+        setProcessingStatus('分析超时，部分任务可能未完成');
+      }
+    }, 300000); // 5分钟超时
+    
+    // 清理超时定时器（当所有任务完成时）
+    const checkCompletion = setInterval(() => {
+      if (completedCount === newDrafts.length && activeCount === 0) {
+        clearInterval(checkCompletion);
+        clearTimeout(timeoutId);
+        setIsProcessing(false);
+        setProcessingStatus('');
+      }
+    }, 500);
   };
 
   const handleAnalyzePoem = async () => {

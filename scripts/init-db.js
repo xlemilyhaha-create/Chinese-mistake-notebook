@@ -91,10 +91,18 @@ async function initDatabase() {
           ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         `);
         
-        // 插入当前版本（假设是初始版本）
-        await connection.query('INSERT INTO schema_version (version) VALUES (?) ON DUPLICATE KEY UPDATE version = ?', 
-          [SCHEMA_VERSION, SCHEMA_VERSION]);
-        console.log(`✅ 已记录数据库结构版本 v${SCHEMA_VERSION}`);
+        // 检查版本是否已存在，如果不存在则插入
+        const [existingVersions] = await connection.query(
+          'SELECT version FROM schema_version WHERE version = ?',
+          [SCHEMA_VERSION]
+        );
+        
+        if (existingVersions.length === 0) {
+          await connection.query('INSERT INTO schema_version (version) VALUES (?)', [SCHEMA_VERSION]);
+          console.log(`✅ 已记录数据库结构版本 v${SCHEMA_VERSION}`);
+        } else {
+          console.log(`✅ 数据库结构版本 v${SCHEMA_VERSION} 已存在`);
+        }
       }
     } else {
       console.log('📝 表 word_entries 不存在，开始创建...');
@@ -138,8 +146,18 @@ async function initDatabase() {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
       `);
       
-      await connection.query('INSERT INTO schema_version (version) VALUES (?)', [SCHEMA_VERSION]);
-      console.log(`✅ 已记录数据库结构版本 v${SCHEMA_VERSION}`);
+      // 检查版本是否已存在，如果不存在则插入
+      const [existingVersions2] = await connection.query(
+        'SELECT version FROM schema_version WHERE version = ?',
+        [SCHEMA_VERSION]
+      );
+      
+      if (existingVersions2.length === 0) {
+        await connection.query('INSERT INTO schema_version (version) VALUES (?)', [SCHEMA_VERSION]);
+        console.log(`✅ 已记录数据库结构版本 v${SCHEMA_VERSION}`);
+      } else {
+        console.log(`✅ 数据库结构版本 v${SCHEMA_VERSION} 已存在`);
+      }
     }
 
     console.log('========================================');
