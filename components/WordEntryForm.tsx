@@ -154,8 +154,11 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     let activeCount = 0;
     
     const processNext = async () => {
+      console.log(`[队列] processNext 被调用, currentIndex: ${currentIndex}, newDrafts.length: ${newDrafts.length}`);
+      
       // 检查是否还有待处理的项
       if (currentIndex >= newDrafts.length) {
+        console.log(`[队列] 没有更多任务，currentIndex: ${currentIndex}, newDrafts.length: ${newDrafts.length}`);
         activeCount--;
         // 如果所有任务都完成了
         if (activeCount === 0 && completedCount >= newDrafts.length) {
@@ -242,16 +245,20 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
 
     // Start initial pool
     console.log(`[队列] 初始化队列，共 ${newDrafts.length} 个词条，并发限制: ${CONCURRENCY_LIMIT}`);
+    console.log(`[队列] newDrafts:`, newDrafts.map(d => d.word));
     
     // 确保状态立即更新
     setProcessingStatus(`正在分析... (0/${newDrafts.length})`);
     
-    // 使用 setTimeout 确保状态更新后再启动任务
-    setTimeout(() => {
-      // 立即启动初始任务，不等待 Promise.all
-      for (let i = 0; i < CONCURRENCY_LIMIT && i < newDrafts.length; i++) {
-        console.log(`[队列] 启动任务 ${i + 1}`);
-        processNext().catch(error => {
+    // 立即启动初始任务（不使用 setTimeout，避免延迟）
+    console.log(`[队列] 准备启动 ${Math.min(CONCURRENCY_LIMIT, newDrafts.length)} 个初始任务`);
+    for (let i = 0; i < CONCURRENCY_LIMIT && i < newDrafts.length; i++) {
+      console.log(`[队列] 启动任务 ${i + 1}/${Math.min(CONCURRENCY_LIMIT, newDrafts.length)}`);
+      // 使用立即执行的异步函数确保任务启动
+      (async () => {
+        try {
+          await processNext();
+        } catch (error) {
           console.error('[队列] 处理错误:', error);
           // 即使出错也继续处理其他任务
           completedCount++;
@@ -259,9 +266,9 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
           if (currentIndex < newDrafts.length) {
             setTimeout(() => processNext(), 1000);
           }
-        });
-      }
-    }, 100);
+        }
+      })();
+    }
     
     // 设置超时保护，防止队列永远卡住
     const timeoutId = setTimeout(() => {

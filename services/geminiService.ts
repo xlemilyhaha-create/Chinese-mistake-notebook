@@ -11,11 +11,14 @@ export interface ApiError {
 }
 
 const analyzeWithGeminiBackend = async (payload: any): Promise<any> => {
+  console.log('[API] analyzeWithGeminiBackend 被调用, payload:', payload);
+  
   // Use AbortController to enforce a timeout (60s to match Vercel function limits)
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 60000); 
 
   try {
+    console.log('[API] 准备发起 fetch 请求到 /api/analyze');
     const response = await fetch('/api/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -23,6 +26,7 @@ const analyzeWithGeminiBackend = async (payload: any): Promise<any> => {
       signal: controller.signal
     });
     clearTimeout(timeoutId);
+    console.log('[API] fetch 请求完成, status:', response.status);
 
     const contentType = response.headers.get("content-type");
     
@@ -116,11 +120,13 @@ const analyzeWithGeminiBackend = async (payload: any): Promise<any> => {
 // --- EXPORTED FUNCTIONS ---
 
 export const analyzeWord = async (word: string): Promise<AnalysisResult | { error: ApiError }> => {
+  console.log(`[API] analyzeWord 被调用, word: ${word}`);
   try {
     const data = await analyzeWithGeminiBackend({ type: 'word', text: word });
+    console.log(`[API] analyzeWord 完成, word: ${word}, data:`, data);
     return mapDataToResult(data);
   } catch (error: any) {
-    console.error(`Failed to analyze word: ${word}`, error);
+    console.error(`[API] Failed to analyze word: ${word}`, error);
     // Return error object so UI can display specific error message
     return { 
       type: EntryType.WORD, 
@@ -133,8 +139,8 @@ export const analyzeWord = async (word: string): Promise<AnalysisResult | { erro
   }
 };
 
-export const analyzeWordsBatch = async (words: string[]): Promise<Record<string, AnalysisResult>> => {
-  const results: Record<string, AnalysisResult> = {};
+export const analyzeWordsBatch = async (words: string[]): Promise<Record<string, AnalysisResult | { error: ApiError }>> => {
+  const results: Record<string, AnalysisResult | { error: ApiError }> = {};
   // Process sequentially or in small parallel batches to avoid overwhelming the server
   // but here we just call analyzeWord which calls the backend
   for (const word of words) {
