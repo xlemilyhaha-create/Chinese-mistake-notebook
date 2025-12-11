@@ -19,13 +19,16 @@ services:
     command: 
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
-      - --max_connections=200
-      - --innodb_buffer_pool_size=${MYSQL_BUFFER_POOL_SIZE:-512M}
+      - --max_connections=50
+      - --innodb_buffer_pool_size=${MYSQL_BUFFER_POOL_SIZE:-64M}
       - --innodb_flush_log_at_trx_commit=2
       - --innodb_flush_method=O_DIRECT
-      - --key_buffer_size=32M
-      - --tmp_table_size=64M
-      - --max_heap_table_size=64M
+      - --key_buffer_size=16M
+      - --tmp_table_size=32M
+      - --max_heap_table_size=32M
+      - --sort_buffer_size=2M
+      - --read_buffer_size=1M
+      - --read_rnd_buffer_size=1M
     # Docker 资源限制（可选，根据需要调整）
     deploy:
       resources:
@@ -34,10 +37,11 @@ services:
         reservations:
           memory: ${MYSQL_MEMORY_RESERVATION:-512M}
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$${MYSQL_ROOT_PASSWORD} || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 30s
     networks:
       - yuwen-network
     logging:

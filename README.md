@@ -139,6 +139,7 @@ QWEN_API_KEY=your_qwen_api_key
 - [Docker 部署指南](./DOCKER.md) - Docker 部署详细说明
 - [AI 模型支持说明](./AI_MODELS.md) - AI 模型配置和使用说明
 - [阿里云部署安全配置](./阿里云部署安全配置.md) - 阿里云 ECS 安全组配置指南
+- [故障排查指南](./故障排查.md) - 常见问题排查和解决方法
 
 ## 🎯 主要特性
 
