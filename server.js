@@ -2,6 +2,7 @@ import express from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync } from 'fs';
+import initDatabase from './scripts/init-db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -9,6 +10,19 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'production';
+
+// 自动初始化数据库（仅在启动时执行一次）
+let dbInitialized = false;
+async function ensureDatabaseInitialized() {
+  if (dbInitialized) return;
+  try {
+    await initDatabase();
+    dbInitialized = true;
+  } catch (error) {
+    console.error('数据库初始化失败，但继续启动服务器:', error.message);
+    // 不阻止服务器启动，允许手动修复
+  }
+}
 
 // 中间件
 app.use(express.json({ limit: '10mb' }));
@@ -65,12 +79,21 @@ app.get('*', (req, res) => {
   }
 });
 
-// 启动服务器
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server is running on http://0.0.0.0:${PORT}`);
-  console.log(`Environment: ${NODE_ENV}`);
-  if (NODE_ENV === 'production') {
-    console.log('Serving static files from:', join(__dirname, 'dist'));
-  }
+// 启动服务器（先初始化数据库）
+ensureDatabaseInitialized().then(() => {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server is running on http://0.0.0.0:${PORT}`);
+    console.log(`Environment: ${NODE_ENV}`);
+    if (NODE_ENV === 'production') {
+      console.log('Serving static files from:', join(__dirname, 'dist'));
+    }
+  });
+}).catch(error => {
+  console.error('启动失败:', error);
+  // 即使数据库初始化失败，也尝试启动服务器（允许手动修复）
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server is running on http://0.0.0.0:${PORT} (数据库可能需要手动初始化)`);
+    console.log(`Environment: ${NODE_ENV}`);
+  });
 });
 

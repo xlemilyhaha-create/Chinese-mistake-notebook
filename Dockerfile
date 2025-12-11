@@ -30,6 +30,8 @@ RUN npm ci --omit=dev --verbose && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/api ./api
 COPY --from=builder /app/services ./services
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/database ./database
 COPY --from=builder /app/server.js ./
 
 # 创建非 root 用户

@@ -1,5 +1,9 @@
 -- 语文错题助手数据库表结构
+-- 注意：数据库名应该与 MYSQL_DATABASE 环境变量一致
+-- 如果使用不同的数据库名，请手动修改下面的数据库名
 
+-- 使用环境变量中的数据库名（如果通过 docker-entrypoint-initdb.d 执行，会自动使用 MYSQL_DATABASE）
+-- 如果手动执行，请将下面的数据库名改为实际使用的数据库名
 CREATE DATABASE IF NOT EXISTS yuwen_cuoti CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 USE yuwen_cuoti;
