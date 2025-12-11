@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&display=swap');
+
+/* A4 Paper Styles for Printing */
+@media print {
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+  
+  body {
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  /* HIDE EVERYTHING by default */
+  body * {
+    visibility: hidden;
+  }
+
+  /* SHOW ONLY the printable root and its children */
+  #printable-root, #printable-root * {
+    visibility: visible;
+  }
+
+  /* RESET layout context for the printable root */
+  #printable-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: white;
+    color: black;
+  }
+
+  /* Ensure clean page breaks */
+  .question-item {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 1rem;
+  }
+
+  .section-title {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  
+  .print-break-before {
+    break-before: page;
+    page-break-before: always;
+    display: block;
+    height: 0; 
+  }
+  
+  /* Hide non-print elements definitively */
+  .no-print {
+    display: none !important;
+  }
+}
+
+.paper-shadow {
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+}
+

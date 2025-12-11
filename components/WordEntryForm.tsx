@@ -4,6 +4,27 @@ import { Loader2, Sparkles, CheckCircle, AlertCircle, Camera, Image as ImageIcon
 import { analyzeWordsBatch, analyzeWord, extractWordsFromImage, analyzePoem, ApiError } from '../services/geminiService';
 import { WordEntry, QuestionType, AnalysisResult, EntryType, TestStatus } from '../types';
 
+// 兼容的 UUID 生成函数
+const generateUUID = (): string => {
+  // 优先使用 crypto.randomUUID（如果可用）
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // 降级方案：使用 crypto.getRandomValues
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // Version 4
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // Variant 10
+    const hex = Array.from(bytes)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+  }
+  // 最后的降级方案：使用时间戳和随机数
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}-${Math.random().toString(36).substring(2, 15)}`;
+};
+
 interface WordEntryFormProps {
   onAddWord: (entry: WordEntry) => void;
 }
@@ -137,7 +158,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     
     // 1. Create placeholders immediately
     const newDrafts: DraftEntry[] = words.map(w => ({
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       word: w,
       analysis: null,
       enabledTypes: [...defaultTypes],
@@ -300,7 +321,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
        const res = await analyzePoem(poemInput);
        if (res && !(res as any).error) {
          setDrafts([{
-           id: crypto.randomUUID(),
+           id: generateUUID(),
            word: res.word, // Title
            analysis: res,
            enabledTypes: [QuestionType.POEM_FILL, QuestionType.POEM_DEFINITION],
@@ -316,7 +337,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
            retryable: true
          };
          setDrafts([{
-           id: crypto.randomUUID(),
+           id: generateUUID(),
            word: poemInput,
            analysis: null,
            enabledTypes: [],
@@ -328,7 +349,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     } catch (err: any) {
       console.error(err);
       setDrafts([{
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         word: poemInput,
         analysis: null,
         enabledTypes: [],
