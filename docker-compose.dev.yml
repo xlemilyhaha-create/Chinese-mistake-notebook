@@ -1,0 +1,64 @@
+# 开发环境 Docker Compose 配置
+services:
+  # MySQL 数据库服务
+  mysql:
+    image: mysql:9.5.0
+    container_name: yuwen-mysql-dev
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-yuwen_cuoti}
+      MYSQL_USER: ${MYSQL_USER:-yuwen_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-yuwen_password}
+      TZ: Asia/Shanghai
+    ports:
+      - "${MYSQL_PORT:-3307}:3306"
+    volumes:
+      - ${MYSQL_DATA_DIR}:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    command: 
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - yuwen-network
+
+  # 应用服务
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: yuwen-app-dev
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3001}:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - DB_HOST=${DB_HOST:-mysql}
+      - DB_USER=${MYSQL_USER:-yuwen_user}
+      - DB_PASSWORD=${MYSQL_PASSWORD:-yuwen_password}
+      - DB_NAME=${MYSQL_DATABASE:-yuwen_cuoti}
+      - AI_PROVIDER=${AI_PROVIDER:-deepseek}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - QWEN_API_KEY=${QWEN_API_KEY:-}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - yuwen-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/words', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  yuwen-network:
+    driver: bridge
+

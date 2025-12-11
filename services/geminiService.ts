@@ -1,9 +1,16 @@
 
 import { AnalysisResult, EntryType } from "../types";
 
-// --- GEMINI ANALYZER (Pure Backend Proxy) ---
+// --- AI ANALYZER (Pure Backend Proxy) ---
 
-const analyzeWithGeminiBackend = async (payload: any) => {
+export interface ApiError {
+  message: string;
+  code?: number;
+  type?: 'network' | 'timeout' | 'server' | 'overloaded' | 'unknown';
+  retryable?: boolean;
+}
+
+const analyzeWithGeminiBackend = async (payload: any): Promise<any> => {
   // Use AbortController to enforce a timeout (60s to match Vercel function limits)
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 60000); 
@@ -18,33 +25,111 @@ const analyzeWithGeminiBackend = async (payload: any) => {
     clearTimeout(timeoutId);
 
     const contentType = response.headers.get("content-type");
-    if (!response.ok || !contentType || !contentType.includes("application/json")) {
-      // If server error or HTML returned (Preview environment), just throw.
-      // We do NOT fallback to client-side key because we want to be secure.
-      throw new Error(`Backend API failure: ${response.status} ${response.statusText}`);
+    
+    // Parse error response
+    if (!response.ok) {
+      let errorData: any = {};
+      try {
+        if (contentType && contentType.includes("application/json")) {
+          errorData = await response.json();
+        }
+      } catch (e) {
+        // Ignore JSON parse errors
+      }
+
+      const error: ApiError = {
+        message: errorData.error || errorData.message || `服务器错误: ${response.status}`,
+        code: response.status,
+        type: 'server',
+        retryable: false
+      };
+
+      // Handle specific error types
+      if (response.status === 503) {
+        error.type = 'overloaded';
+        error.message = 'AI 服务暂时过载，请稍后重试';
+        error.retryable = true;
+      } else if (response.status === 429) {
+        error.type = 'overloaded';
+        error.message = '请求过于频繁，请稍后重试';
+        error.retryable = true;
+      } else if (response.status === 500) {
+        error.message = errorData.error?.includes('API Key') 
+          ? 'API 密钥配置错误，请检查配置'
+          : '服务器内部错误，请稍后重试';
+        error.retryable = true;
+      } else if (response.status >= 400 && response.status < 500) {
+        error.message = errorData.error || '请求参数错误';
+        error.retryable = false;
+      }
+
+      throw error;
+    }
+
+    if (!contentType || !contentType.includes("application/json")) {
+      throw {
+        message: '服务器返回格式错误',
+        type: 'server' as const,
+        retryable: false
+      } as ApiError;
     }
 
     return await response.json();
 
   } catch (error: any) {
     clearTimeout(timeoutId);
+    
+    // Handle abort (timeout)
+    if (error.name === 'AbortError') {
+      throw {
+        message: '请求超时，请检查网络连接后重试',
+        type: 'timeout' as const,
+        retryable: true
+      } as ApiError;
+    }
+
+    // Handle network errors
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw {
+        message: '网络连接失败，请检查网络设置',
+        type: 'network' as const,
+        retryable: true
+      } as ApiError;
+    }
+
+    // If it's already an ApiError, re-throw it
+    if (error.type) {
+      throw error;
+    }
+
+    // Unknown error
     console.error("Analysis Error:", error);
-    // Re-throw to let the UI show the error state
-    throw error;
+    throw {
+      message: error.message || '未知错误，请稍后重试',
+      type: 'unknown' as const,
+      retryable: true
+    } as ApiError;
   }
 };
 
 
 // --- EXPORTED FUNCTIONS ---
 
-export const analyzeWord = async (word: string): Promise<AnalysisResult> => {
+export const analyzeWord = async (word: string): Promise<AnalysisResult | { error: ApiError }> => {
   try {
     const data = await analyzeWithGeminiBackend({ type: 'word', text: word });
     return mapDataToResult(data);
-  } catch (error) {
+  } catch (error: any) {
     console.error(`Failed to analyze word: ${word}`, error);
-    // Return error state so UI shows red icon
-    return { type: EntryType.WORD, word, pinyin: "Error", definitionData: null, definitionMatchData: null };
+    // Return error object so UI can display specific error message
+    return { 
+      type: EntryType.WORD, 
+      word, 
+      pinyin: "Error", 
+      definitionData: null, 
+      definitionMatchData: null,
+      error: error as ApiError
+    } as any;
   }
 };
 
@@ -58,7 +143,7 @@ export const analyzeWordsBatch = async (words: string[]): Promise<Record<string,
   return results;
 };
 
-export const analyzePoem = async (input: string): Promise<AnalysisResult | null> => {
+export const analyzePoem = async (input: string): Promise<AnalysisResult | { error: ApiError } | null> => {
   try {
     const data = await analyzeWithGeminiBackend({ type: 'poem', text: input });
     return {
@@ -77,9 +162,9 @@ export const analyzePoem = async (input: string): Promise<AnalysisResult | null>
         definitionQuestions: data.definitionQuestions || []
       }
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Poem Analysis Error:", error);
-    return null;
+    return { error: error as ApiError } as any;
   }
 };
 

@@ -1,8 +1,8 @@
 
 import React, { useState, useRef } from 'react';
 import { Loader2, Sparkles, CheckCircle, AlertCircle, Camera, Image as ImageIcon, X, ScrollText, Type, Monitor } from 'lucide-react';
-import { analyzeWordsBatch, analyzeWord, extractWordsFromImage, analyzePoem } from '../services/geminiService';
-import { WordEntry, QuestionType, AnalysisResult, EntryType } from '../types';
+import { analyzeWordsBatch, analyzeWord, extractWordsFromImage, analyzePoem, ApiError } from '../services/geminiService';
+import { WordEntry, QuestionType, AnalysisResult, EntryType, TestStatus } from '../types';
 
 interface WordEntryFormProps {
   onAddWord: (entry: WordEntry) => void;
@@ -15,6 +15,7 @@ interface DraftEntry {
   enabledTypes: QuestionType[];
   status: 'pending' | 'analyzing' | 'done' | 'error';
   type: EntryType;
+  error?: ApiError; // Error details for better user feedback
 }
 
 const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
@@ -163,12 +164,23 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
       try {
         const res = await analyzeWord(draft.word);
         
+        // Check if result contains error
+        const hasError = (res as any).error || res.pinyin === "Error";
+        
         // Update result
         setDrafts(prev => prev.map(d => {
           if (d.id !== draft.id) return d;
           
-          if (res.pinyin === "Error") {
-             return { ...d, status: 'error' };
+          if (hasError) {
+             return { 
+               ...d, 
+               status: 'error',
+               error: (res as any).error || {
+                 message: '分析失败，请重试',
+                 type: 'unknown',
+                 retryable: true
+               }
+             };
           }
           
           let types = [...defaultTypes];
@@ -179,10 +191,18 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
             types = types.filter(t => t !== QuestionType.DEFINITION_MATCH);
           }
           
-          return { ...d, analysis: res, enabledTypes: types, status: 'done' };
+          return { ...d, analysis: res, enabledTypes: types, status: 'done', error: undefined };
         }));
-      } catch (e) {
-        setDrafts(prev => prev.map(d => d.id === draft.id ? { ...d, status: 'error' } : d));
+      } catch (e: any) {
+        setDrafts(prev => prev.map(d => d.id === draft.id ? { 
+          ...d, 
+          status: 'error',
+          error: e.type ? e : {
+            message: e.message || '分析失败，请重试',
+            type: 'unknown',
+            retryable: true
+          }
+        } : d));
       } finally {
         completedCount++;
         setProcessingStatus(`正在分析... (${completedCount}/${newDrafts.length})`);
@@ -214,21 +234,48 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     
     try {
        const res = await analyzePoem(poemInput);
-       if (res) {
+       if (res && !(res as any).error) {
          setDrafts([{
            id: crypto.randomUUID(),
            word: res.word, // Title
            analysis: res,
            enabledTypes: [QuestionType.POEM_FILL, QuestionType.POEM_DEFINITION],
            status: 'done',
-           type: EntryType.POEM
+           type: EntryType.POEM,
+           error: undefined
          }]);
          setPoemInput('');
        } else {
-         alert("古诗分析失败，请重试");
+         const error = (res as any)?.error || {
+           message: '古诗分析失败，请重试',
+           type: 'unknown' as const,
+           retryable: true
+         };
+         setDrafts([{
+           id: crypto.randomUUID(),
+           word: poemInput,
+           analysis: null,
+           enabledTypes: [],
+           status: 'error',
+           type: EntryType.POEM,
+           error
+         }]);
        }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setDrafts([{
+        id: crypto.randomUUID(),
+        word: poemInput,
+        analysis: null,
+        enabledTypes: [],
+        status: 'error',
+        type: EntryType.POEM,
+        error: err.type ? err : {
+          message: err.message || '分析出错，请重试',
+          type: 'unknown' as const,
+          retryable: true
+        }
+      }]);
       setProcessingStatus('分析出错');
     } finally {
       setIsProcessing(false);
@@ -285,7 +332,10 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
         definitionData: draft.analysis.definitionData || undefined,
         definitionMatchData: draft.analysis.definitionMatchData || undefined,
         poemData: draft.analysis.poemData,
-        enabledTypes: draft.enabledTypes
+        enabledTypes: draft.enabledTypes,
+        testStatus: TestStatus.NOT_TESTED,
+        isMultipleAttempts: false,
+        previousTestStatus: undefined
       });
     });
 
@@ -501,11 +551,44 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center text-gray-500">
-                    {draft.status === 'analyzing' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : 
-                     draft.status === 'pending' ? <span className="text-xs">等待分析...</span> :
-                     <AlertCircle className="w-4 h-4 mr-2 text-red-500" />}
-                    {draft.status === 'error' && '分析失败'}
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center text-gray-500">
+                      {draft.status === 'analyzing' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : 
+                       draft.status === 'pending' ? <span className="text-xs">等待分析...</span> :
+                       <AlertCircle className="w-4 h-4 mr-2 text-red-500" />}
+                      {draft.status === 'error' && (
+                        <span className="text-xs text-red-600">
+                          {draft.error?.message || '分析失败'}
+                        </span>
+                      )}
+                    </div>
+                    {draft.status === 'error' && draft.error?.retryable && (
+                      <button
+                        onClick={async () => {
+                          if (draft.type === EntryType.WORD) {
+                            const res = await analyzeWord(draft.word);
+                            const hasError = (res as any).error || res.pinyin === "Error";
+                            setDrafts(prev => prev.map(d => {
+                              if (d.id !== draft.id) return d;
+                              if (hasError) {
+                                return { ...d, status: 'error', error: (res as any).error };
+                              }
+                              let types = [...defaultTypes];
+                              if (types.includes(QuestionType.DEFINITION) && !res.definitionData) {
+                                types = types.filter(t => t !== QuestionType.DEFINITION);
+                              }
+                              if (types.includes(QuestionType.DEFINITION_MATCH) && !res.definitionMatchData) {
+                                types = types.filter(t => t !== QuestionType.DEFINITION_MATCH);
+                              }
+                              return { ...d, analysis: res, enabledTypes: types, status: 'done', error: undefined };
+                            }));
+                          }
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-800 underline mt-1"
+                      >
+                        重试
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

@@ -13,6 +13,12 @@ export enum QuestionType {
   POEM_DEFINITION = 'POEM_DEFINITION' // Poem -> Select Meaning of character
 }
 
+export enum TestStatus {
+  NOT_TESTED = 'NOT_TESTED', // 未测试
+  FAILED = 'FAILED', // 未通过
+  PASSED = 'PASSED' // 已通过
+}
+
 export interface DefinitionQuestionData {
   targetChar: string; // The specific character being tested (e.g., "益" in "精益求精")
   options: string[]; // 4 options (Definitions)
@@ -60,12 +66,25 @@ export interface WordEntry {
   poemData?: PoemData;
   
   // User preferences
-  enabledTypes: QuestionType[]; 
+  enabledTypes: QuestionType[];
+  
+  // Test status tracking
+  testStatus: TestStatus; // 测试通过状态
+  isMultipleAttempts: boolean; // 是否多次测试才通过
+  previousTestStatus?: TestStatus; // 上一次测试状态，用于判断是否多次测试才通过
 }
 
 export interface FilterOptions {
   startDate: number | null;
   endDate: number | null;
+  questionTypes?: QuestionType[]; // 题型过滤
+  testStatuses?: TestStatus[]; // 测试通过状态过滤
+  isMultipleAttempts?: boolean | boolean[] | null; // 是否多次测试才通过过滤 (null表示不过滤，数组表示多选)
+}
+
+export interface ExamFilterOptions {
+  testStatuses?: TestStatus[]; // 测试通过状态过滤（多选）
+  isMultipleAttempts?: boolean | null; // 是否多次测试才通过过滤
 }
 
 export interface AnalysisResult {

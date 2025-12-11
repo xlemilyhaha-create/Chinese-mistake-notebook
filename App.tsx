@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { BookOpen, FileText, Settings, Database, Download, Upload, Trash2, AlertCircle, Save } from 'lucide-react';
+import { BookOpen, FileText, Settings, Database, Download, Upload, Trash2, AlertCircle, Save, Loader2 } from 'lucide-react';
 import WordEntryForm from './components/WordEntryForm';
 import WordList from './components/WordList';
 import ExamGenerator from './components/ExamGenerator';
-import { WordEntry, EntryType } from './types';
+import { WordEntry, EntryType, TestStatus, FilterOptions } from './types';
+import { wordService } from './services/wordService';
 
 enum View {
   HOME = 'HOME',
@@ -15,37 +16,72 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>(View.HOME);
   const [words, setWords] = useState<WordEntry[]>([]);
   const [showSettings, setShowSettings] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState<FilterOptions>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 初始加载数据（筛选改为前端处理，不需要根据 filters 重新加载）
   useEffect(() => {
-    // Load Words
-    const saved = localStorage.getItem('yuwen_words');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        const migrated = parsed.map((w: any) => ({
-          ...w,
-          type: w.type || EntryType.WORD
-        }));
-        setWords(migrated);
-      } catch (e) { console.error("Failed to parse saved words"); }
+    loadWords();
+  }, []); // 只在组件挂载时加载一次
+
+  const loadWords = async () => {
+    try {
+      setLoading(true);
+      // 加载所有数据，筛选由前端 WordList 组件处理
+      const data = await wordService.getWords();
+      setWords(data);
+    } catch (error) {
+      console.error('Failed to load words:', error);
+      alert('加载数据失败，请检查网络连接和数据库配置');
+    } finally {
+      setLoading(false);
     }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem('yuwen_words', JSON.stringify(words));
-  }, [words]);
-
-  const handleAddWord = (entry: WordEntry) => {
-    setWords(prev => [entry, ...prev]);
   };
 
-  const handleDeleteWord = (id: string) => {
-    setWords(prev => prev.filter(w => w.id !== id));
+  const handleAddWord = async (entry: WordEntry) => {
+    try {
+      await wordService.createWord(entry);
+      await loadWords(); // Reload to get latest data
+    } catch (error) {
+      console.error('Failed to add word:', error);
+      alert('添加词条失败，请重试');
+    }
   };
 
-  const handleUpdateWord = (id: string, updates: Partial<WordEntry>) => {
-    setWords(prev => prev.map(w => w.id === id ? { ...w, ...updates } : w));
+  const handleDeleteWord = async (id: string) => {
+    try {
+      await wordService.deleteWord(id);
+      await loadWords(); // Reload to get latest data
+    } catch (error) {
+      console.error('Failed to delete word:', error);
+      alert('删除词条失败，请重试');
+    }
+  };
+
+  const handleUpdateWord = async (id: string, updates: Partial<WordEntry>) => {
+    try {
+      await wordService.updateWord(id, updates);
+      await loadWords(); // Reload to get latest data
+    } catch (error) {
+      console.error('Failed to update word:', error);
+      alert('更新词条失败，请重试');
+    }
+  };
+
+  const handleBatchUpdateStatus = async (ids: string[], testStatus: TestStatus) => {
+    try {
+      await wordService.batchUpdateTestStatus(ids, testStatus);
+      await loadWords(); // Reload to get latest data
+    } catch (error) {
+      console.error('Failed to batch update status:', error);
+      alert('批量更新状态失败，请重试');
+    }
+  };
+
+  const handleFilterChange = (newFilters: FilterOptions) => {
+    // 筛选改为前端处理，不需要更新 App.tsx 的 filters 状态
+    // 保留此函数以保持接口兼容性
   };
 
   const handleExport = () => {
@@ -60,23 +96,40 @@ const App: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const json = JSON.parse(event.target?.result as string);
         if (Array.isArray(json)) {
           if (confirm(`确定要导入 ${json.length} 条数据吗？这将合并到当前题库。`)) {
-            const currentIds = new Set(words.map(w => w.id));
+            const currentWords = await wordService.getWords();
+            const currentIds = new Set(currentWords.map(w => w.id));
             const newWords = json
               .filter((w: any) => !currentIds.has(w.id))
-              .map((w: any) => ({ ...w, type: w.type || EntryType.WORD }));
-              
-            setWords(prev => [...newWords, ...prev]);
-            alert(`成功导入 ${newWords.length} 个新词语！`);
+              .map((w: any) => ({
+                ...w,
+                type: w.type || EntryType.WORD,
+                testStatus: w.testStatus || TestStatus.NOT_TESTED,
+                isMultipleAttempts: w.isMultipleAttempts || false
+              }));
+
+            // Import each word
+            let successCount = 0;
+            for (const word of newWords) {
+              try {
+                await wordService.createWord(word);
+                successCount++;
+              } catch (err) {
+                console.error(`Failed to import word ${word.id}:`, err);
+              }
+            }
+
+            await loadWords();
+            alert(`成功导入 ${successCount} 个新词语！`);
           }
         } else {
           alert("文件格式不正确");
@@ -89,10 +142,19 @@ const App: React.FC = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleClearAll = () => {
+  const handleClearAll = async () => {
     if (confirm("确定要清空所有数据吗？此操作无法撤销！建议先导出备份。")) {
-      setWords([]);
-      localStorage.removeItem('yuwen_words');
+      try {
+        const allWords = await wordService.getWords();
+        for (const word of allWords) {
+          await wordService.deleteWord(word.id);
+        }
+        await loadWords();
+        alert('已清空所有数据');
+      } catch (error) {
+        console.error('Failed to clear all:', error);
+        alert('清空数据失败，请重试');
+      }
     }
   };
 
@@ -172,27 +234,37 @@ const App: React.FC = () => {
       </header>
 
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-8">
-        <section>
-          <WordEntryForm onAddWord={handleAddWord} />
-        </section>
-
-        <section className="mt-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-gray-800 flex items-center">
-              <Database className="w-5 h-5 mr-2 text-gray-500" />
-              题库列表
-            </h2>
-            <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
-              共 {words.length} 个词
-            </span>
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            <span className="ml-3 text-gray-600">加载中...</span>
           </div>
-          <WordList 
-            words={words} 
-            onDelete={handleDeleteWord} 
-            onUpdate={handleUpdateWord}
-          />
-        </section>
+        ) : (
+          <>
+            <section>
+              <WordEntryForm onAddWord={handleAddWord} />
+            </section>
 
+            <section className="mt-8">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-gray-800 flex items-center">
+                  <Database className="w-5 h-5 mr-2 text-gray-500" />
+                  题库列表
+                </h2>
+                <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
+                  共 {words.length} 个词
+                </span>
+              </div>
+              <WordList 
+                words={words} 
+                onDelete={handleDeleteWord} 
+                onUpdate={handleUpdateWord}
+                onBatchUpdateStatus={handleBatchUpdateStatus}
+                onFilterChange={handleFilterChange}
+              />
+            </section>
+          </>
+        )}
       </main>
       
       <footer className="bg-white border-t border-gray-200 py-6 text-center text-sm text-gray-400 mt-auto">

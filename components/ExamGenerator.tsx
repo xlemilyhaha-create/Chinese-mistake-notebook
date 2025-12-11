@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
-import { WordEntry, QuestionType } from '../types';
-import { Printer, ArrowLeft, Sliders, AlertCircle } from 'lucide-react';
+import { WordEntry, QuestionType, TestStatus, ExamFilterOptions } from '../types';
+import { Printer, ArrowLeft, Sliders, AlertCircle, Filter } from 'lucide-react';
 
 interface ExamGeneratorProps {
   words: WordEntry[];
@@ -11,6 +11,11 @@ interface ExamGeneratorProps {
 const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [isPrinting, setIsPrinting] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [examFilters, setExamFilters] = useState<ExamFilterOptions>({
+    testStatuses: [TestStatus.NOT_TESTED, TestStatus.FAILED],
+    isMultipleAttempts: null
+  });
   
   const availableDates = useMemo(() => {
     const dates = new Set(words.map(w => new Date(w.createdAt).toLocaleDateString('zh-CN')));
@@ -18,9 +23,26 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
   }, [words]);
 
   const filteredWords = useMemo(() => {
-    if (!selectedDate) return words;
-    return words.filter(w => new Date(w.createdAt).toLocaleDateString('zh-CN') === selectedDate);
-  }, [words, selectedDate]);
+    let result = words;
+    
+    // Date filter
+    if (selectedDate) {
+      result = result.filter(w => new Date(w.createdAt).toLocaleDateString('zh-CN') === selectedDate);
+    }
+    
+    // Test status filter - 确保默认筛选条件应用
+    const testStatuses = examFilters.testStatuses || [TestStatus.NOT_TESTED, TestStatus.FAILED];
+    if (testStatuses.length > 0) {
+      result = result.filter(w => testStatuses.includes(w.testStatus));
+    }
+    
+    // Multiple attempts filter
+    if (examFilters.isMultipleAttempts !== null && examFilters.isMultipleAttempts !== undefined) {
+      result = result.filter(w => w.isMultipleAttempts === examFilters.isMultipleAttempts);
+    }
+    
+    return result;
+  }, [words, selectedDate, examFilters]);
 
   const questions = useMemo(() => {
     const qs = {
@@ -82,41 +104,138 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      <div className="bg-white border-b p-4 flex flex-col md:flex-row items-center justify-between gap-4 no-print shadow-sm z-10 shrink-0">
-        <div className="flex items-center gap-4 w-full md:w-auto">
-          <button onClick={onBack} className="text-gray-500 hover:text-gray-800 flex items-center">
-            <ArrowLeft className="w-5 h-5 mr-1" /> 返回
-          </button>
-          <div className="h-6 w-px bg-gray-300 hidden md:block"></div>
-          <div className="flex items-center gap-2 flex-1 md:flex-none">
-            <Sliders className="w-4 h-4 text-gray-500" />
-            <select 
-              className="border rounded px-3 py-1.5 text-sm bg-gray-50 min-w-[160px]"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
+      <div className="bg-white border-b p-4 flex flex-col gap-4 no-print shadow-sm z-10 shrink-0">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4 w-full md:w-auto">
+            <button onClick={onBack} className="text-gray-500 hover:text-gray-800 flex items-center">
+              <ArrowLeft className="w-5 h-5 mr-1" /> 返回
+            </button>
+            <div className="h-6 w-px bg-gray-300 hidden md:block"></div>
+            <div className="flex items-center gap-2 flex-1 md:flex-none">
+              <Sliders className="w-4 h-4 text-gray-500" />
+              <select 
+                className="border rounded px-3 py-1.5 text-sm bg-gray-50 min-w-[160px]"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+              >
+                <option value="">所有日期 ({words.length} 词)</option>
+                {availableDates.map(date => (
+                  <option key={date} value={date}>{date}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                showFilters ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
             >
-              <option value="">所有日期 ({words.length} 词)</option>
-              {availableDates.map(date => (
-                <option key={date} value={date}>{date}</option>
-              ))}
-            </select>
+              <Filter className="w-4 h-4" />
+              组卷条件
+            </button>
+            <div className="text-xs text-gray-500 hidden lg:flex items-center">
+               <AlertCircle className="w-3 h-3 mr-1" />
+               预览为连续模式，打印/PDF将自动分页
+            </div>
+            <button 
+              onClick={handlePrint}
+              disabled={isPrinting}
+              className="bg-primary hover:bg-indigo-700 text-white px-5 py-2 rounded-lg shadow flex items-center font-medium transition-colors disabled:opacity-70"
+            >
+              <Printer className="w-5 h-5 mr-2" />
+              {isPrinting ? '正在调用打印...' : '打印 / 下载PDF'}
+            </button>
           </div>
         </div>
-        
-        <div className="flex items-center gap-4">
-          <div className="text-xs text-gray-500 hidden lg:flex items-center">
-             <AlertCircle className="w-3 h-3 mr-1" />
-             预览为连续模式，打印/PDF将自动分页
+
+        {showFilters && (
+          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 space-y-4">
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-2 block">测试通过状态（可多选）</label>
+              <div className="flex flex-wrap gap-2">
+                {Object.values(TestStatus).map(status => {
+                  const isSelected = examFilters.testStatuses?.includes(status);
+                  const labels: Record<TestStatus, string> = {
+                    [TestStatus.NOT_TESTED]: '未测试',
+                    [TestStatus.FAILED]: '未通过',
+                    [TestStatus.PASSED]: '已通过'
+                  };
+                  return (
+                    <button
+                      key={status}
+                      onClick={() => {
+                        const newFilters = { ...examFilters };
+                        if (!newFilters.testStatuses) newFilters.testStatuses = [];
+                        
+                        if (newFilters.testStatuses.includes(status)) {
+                          newFilters.testStatuses = newFilters.testStatuses.filter(s => s !== status);
+                        } else {
+                          newFilters.testStatuses = [...newFilters.testStatuses, status];
+                        }
+                        
+                        setExamFilters(newFilters);
+                      }}
+                      className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                        isSelected ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-white text-gray-700 border-gray-300'
+                      }`}
+                    >
+                      {labels[status]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-2 block">是否多次测试才通过</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setExamFilters({ ...examFilters, isMultipleAttempts: null })}
+                  className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                    examFilters.isMultipleAttempts === null ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-white text-gray-700 border-gray-300'
+                  }`}
+                >
+                  全部
+                </button>
+                <button
+                  onClick={() => setExamFilters({ ...examFilters, isMultipleAttempts: true })}
+                  className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                    examFilters.isMultipleAttempts === true ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-white text-gray-700 border-gray-300'
+                  }`}
+                >
+                  是
+                </button>
+                <button
+                  onClick={() => setExamFilters({ ...examFilters, isMultipleAttempts: false })}
+                  className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                    examFilters.isMultipleAttempts === false ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-white text-gray-700 border-gray-300'
+                  }`}
+                >
+                  否
+                </button>
+              </div>
+            </div>
+
+            <div className="text-sm text-gray-600 pt-2 border-t">
+              当前筛选结果: {filteredWords.length} / {words.length} 个词条
+              {examFilters.testStatuses && examFilters.testStatuses.length > 0 && (
+                <span className="ml-2 text-xs text-gray-500">
+                  (状态: {examFilters.testStatuses.map(s => {
+                    const labels: Record<TestStatus, string> = {
+                      [TestStatus.NOT_TESTED]: '未测试',
+                      [TestStatus.FAILED]: '未通过',
+                      [TestStatus.PASSED]: '已通过'
+                    };
+                    return labels[s];
+                  }).join(', ')})
+                </span>
+              )}
+            </div>
           </div>
-          <button 
-            onClick={handlePrint}
-            disabled={isPrinting}
-            className="bg-primary hover:bg-indigo-700 text-white px-5 py-2 rounded-lg shadow flex items-center font-medium transition-colors disabled:opacity-70"
-          >
-            <Printer className="w-5 h-5 mr-2" />
-            {isPrinting ? '正在调用打印...' : '打印 / 下载PDF'}
-          </button>
-        </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-auto bg-gray-100 p-8 flex justify-center">
