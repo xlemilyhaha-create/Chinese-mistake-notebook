@@ -175,11 +175,8 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     let activeCount = 0;
     
     const processNext = async () => {
-      console.log(`[队列] processNext 被调用, currentIndex: ${currentIndex}, newDrafts.length: ${newDrafts.length}`);
-      
       // 检查是否还有待处理的项
       if (currentIndex >= newDrafts.length) {
-        console.log(`[队列] 没有更多任务，currentIndex: ${currentIndex}, newDrafts.length: ${newDrafts.length}`);
         activeCount--;
         // 如果所有任务都完成了
         if (activeCount === 0 && completedCount >= newDrafts.length) {
@@ -196,13 +193,9 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
       // Update status to analyzing
       setDrafts(prev => prev.map(d => d.id === draft.id ? { ...d, status: 'analyzing' } : d));
       setProcessingStatus(`正在分析 "${draft.word}"... (${completedCount}/${newDrafts.length})`);
-      
-      console.log(`[队列] 开始处理: ${draft.word}, 当前索引: ${myIndex}, 已完成: ${completedCount}, 活跃: ${activeCount}`);
 
       try {
-        console.log(`[分析] 开始分析词条: ${draft.word}`);
         const res = await analyzeWord(draft.word);
-        console.log(`[分析] 完成: ${draft.word}`, res);
         
         // Check if result contains error
         const hasError = (res as any).error || res.pinyin === "Error";
@@ -255,7 +248,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
           setProcessingStatus('');
         } else {
           // Trigger next in queue (不等待，避免阻塞)
-          if (currentIndex < newDrafts.length) {
+        if (currentIndex < newDrafts.length) {
             processNext().catch(error => {
               console.error('处理下一个任务时出错:', error);
             });
@@ -265,16 +258,11 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     };
 
     // Start initial pool
-    console.log(`[队列] 初始化队列，共 ${newDrafts.length} 个词条，并发限制: ${CONCURRENCY_LIMIT}`);
-    console.log(`[队列] newDrafts:`, newDrafts.map(d => d.word));
-    
     // 确保状态立即更新
     setProcessingStatus(`正在分析... (0/${newDrafts.length})`);
     
     // 立即启动初始任务（不使用 setTimeout，避免延迟）
-    console.log(`[队列] 准备启动 ${Math.min(CONCURRENCY_LIMIT, newDrafts.length)} 个初始任务`);
     for (let i = 0; i < CONCURRENCY_LIMIT && i < newDrafts.length; i++) {
-      console.log(`[队列] 启动任务 ${i + 1}/${Math.min(CONCURRENCY_LIMIT, newDrafts.length)}`);
       // 使用立即执行的异步函数确保任务启动
       (async () => {
         try {
@@ -286,7 +274,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
           activeCount--;
           if (currentIndex < newDrafts.length) {
             setTimeout(() => processNext(), 1000);
-          }
+    }
         }
       })();
     }
@@ -305,8 +293,8 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
       if (completedCount === newDrafts.length && activeCount === 0) {
         clearInterval(checkCompletion);
         clearTimeout(timeoutId);
-        setIsProcessing(false);
-        setProcessingStatus('');
+    setIsProcessing(false);
+    setProcessingStatus('');
       }
     }, 500);
   };
@@ -637,10 +625,10 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
                   </div>
                 ) : (
                   <div className="flex flex-col gap-1">
-                    <div className="flex items-center text-gray-500">
-                      {draft.status === 'analyzing' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : 
-                       draft.status === 'pending' ? <span className="text-xs">等待分析...</span> :
-                       <AlertCircle className="w-4 h-4 mr-2 text-red-500" />}
+                  <div className="flex items-center text-gray-500">
+                    {draft.status === 'analyzing' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : 
+                     draft.status === 'pending' ? <span className="text-xs">等待分析...</span> :
+                     <AlertCircle className="w-4 h-4 mr-2 text-red-500" />}
                       {draft.status === 'error' && (
                         <span className="text-xs text-red-600">
                           {draft.error?.message || '分析失败'}

@@ -188,7 +188,6 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onUpdate, onBatchU
   // 应用筛选条件
   const applyFilters = () => {
     const newFilters = { ...tempFilters };
-    console.log('应用筛选条件:', newFilters);
     setFilters(newFilters);
     // 重置页码，因为筛选结果可能变化
     setPage(1);
