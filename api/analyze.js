@@ -117,18 +117,18 @@ export default async function handler(req, res) {
     } else if (type === 'poem') {
       parts = [{ text: `你是一个资深的语文教育专家。分析古诗词 "${text}"。
       
-      【默写题规则】：
-      - 挑选 2-3 行进行默写，【严禁】重复出现同一行诗。
+      【默写题核心规则 - 严禁重复】：
+      - 从全诗中挑选 2-4 行进行默写。
+      - 【核心要求】：每行诗句在 fillQuestions 数组中**只能出现一次**。
+      - 严禁对同一行诗句生成多个不同的挖空版本（例如：第一行不能既出现在 index 0 又出现在 index 1）。
       - 必须在诗句的【关键字/易错字】处挖空。
       
       【释义题规则】：
-      - 【必须】生成 3-5 个重点字词的释义选择题。
-      - 优先挑选具有多重含义、易读错或体现诗人情感的动词/形容词。
-      - 确保每首诗都有充足的练习内容。
+      - 生成 3-5 个重点字词的释义选择题。
       
-      请在思考过程中先完整复述诗句，确保行索引(lineIndex)准确。` }];
+      请在思考过程中先完整列出诗句及其对应的 index，确保 fillQuestions 的 lineIndex 唯一且准确。` }];
       schema = poemSchema;
-      thinkingBudget = 10000; // 显著增加思考时间
+      thinkingBudget = 10000;
     } else if (type === 'ocr') {
       parts = [{ inlineData: { mimeType: 'image/jpeg', data: image } }, { text: "提取图中的所有中文生词、成语。" }];
       schema = ocrSchema;

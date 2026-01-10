@@ -133,7 +133,7 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
         <div id="printable-root" className="relative">
           <div className="page-footer hidden print:block"></div>
 
-          {/* 试卷主页 - 重新设计大字号布局 */}
+          {/* 试卷主页 */}
           <div className="bg-white shadow-lg w-[210mm] min-h-[297mm] mx-auto p-[20mm] box-border relative mb-8 text-black">
             <div className="text-center border-b-2 border-black pb-4 mb-8">
               <h1 className="text-2xl font-bold font-serif tracking-[0.2em] mb-2">语文错题专项强化练习卷</h1>
@@ -172,21 +172,29 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
             {questions.poemFill.length > 0 && (
               <div className="mb-10">
                 <h2 className="text-lg font-bold mb-6 font-kai flex items-center border-l-4 border-black pl-3">三、古诗文默写</h2>
-                <div className="space-y-6 pl-4">
-                  {questions.poemFill.map((w, idx) => (
-                    <div key={idx} className="question-item">
-                      <div className="text-sm font-bold text-gray-500 mb-2 italic">《{w.word}》：</div>
-                      <div className="space-y-4">
-                        {(w.poemData?.fillAnswers as any[] || []).map((fill, fIdx) => (
-                           <div key={fIdx} className="font-serif text-base leading-loose">
-                             {fill.pre}
-                             <span className="inline-block border-b-2 border-black min-w-[150px] mx-1 text-transparent select-none">填空内容</span>
-                             {fill.post}
-                           </div>
-                        ))}
+                <div className="space-y-10 pl-4 mt-4">
+                  {questions.poemFill.map((w, idx) => {
+                    // 强力去重逻辑：基于“完整诗句文本”去重
+                    // 将 pre + answer + post 拼接，作为 Map 的 Key，确保每一行内容只出现一次
+                    const uniqueLines = Array.from(new Map(
+                      (w.poemData?.fillAnswers || []).map(f => [f.pre + f.answer + f.post, f])
+                    ).values()) as any[];
+
+                    return (
+                      <div key={idx} className="question-item">
+                        <div className="text-base font-bold text-gray-600 mb-4 font-kai">《{w.word}》：</div>
+                        <div className="space-y-8 border-l-2 border-gray-100 pl-6">
+                          {uniqueLines.map((fill, fIdx) => (
+                             <div key={fIdx} className="font-serif text-xl leading-[2.5]">
+                               {fill.pre}
+                               <span className="inline-block border-b-2 border-black min-w-[240px] mx-2 text-transparent select-none">此处填空内容</span>
+                               {fill.post}
+                             </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -249,7 +257,7 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
 
           <div className="print-break-before"></div>
 
-          {/* 答案页 - 保持清晰易读 */}
+          {/* 答案页 */}
           <div className="bg-white shadow-lg w-[210mm] min-h-[297mm] mx-auto p-[20mm] box-border relative text-black">
             <div className="text-center border-b-2 border-black pb-4 mb-10">
               <h1 className="text-xl font-bold font-serif tracking-widest">参考答案与解析</h1>
