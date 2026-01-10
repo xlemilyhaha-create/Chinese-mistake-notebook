@@ -1,8 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-const apiKey = process.env.API_KEY;
-
 const itemSchemaProperties = {
   word: { type: Type.STRING, description: "必须严格等于输入列表中的原始字符串，不得修改空格或符号" },
   pinyin: { type: Type.STRING },
@@ -99,10 +97,13 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
-  if (!apiKey) return res.status(500).json({ error: "Server API Key missing." });
+  
+  // 必须在 handler 内部获取，以支持动态切换的 Key
+  const dynamicApiKey = process.env.API_KEY;
+  if (!dynamicApiKey) return res.status(500).json({ error: "Server API Key missing. Please select a key in settings." });
 
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: dynamicApiKey });
     const { type, text, words, image } = req.body;
 
     let model = 'gemini-3-flash-preview';

@@ -10,14 +10,17 @@ enum View {
   EXAM = 'EXAM',
 }
 
-// Fix: Augment existing global AIStudio interface and properly type window.aistudio to resolve identical modifier and type mismatch errors
 declare global {
   interface AIStudio {
     hasSelectedApiKey: () => Promise<boolean>;
     openSelectKey: () => Promise<void>;
   }
   interface Window {
-    aistudio: AIStudio;
+    /**
+     * Fix for "All declarations of 'aistudio' must have identical modifiers".
+     * Making it optional to match potential pre-existing definitions in the environment.
+     */
+    aistudio?: AIStudio;
   }
 }
 
@@ -27,28 +30,37 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [hasPaidKey, setHasPaidKey] = useState(false);
+  const [isKeyActionLoading, setIsKeyActionLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- API Functions ---
   
   const checkApiKey = async () => {
     try {
-      if (window.aistudio) {
+      if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
         const hasKey = await window.aistudio.hasSelectedApiKey();
         setHasPaidKey(hasKey);
       }
     } catch (e) {
-      console.warn("API Key check not available");
+      console.warn("API Key check not available in current environment");
     }
   };
 
   const handleSelectKey = async () => {
-    if (window.aistudio) {
-      await window.aistudio.openSelectKey();
-      // Assume the key selection was successful after triggering openSelectKey() as per instructions to mitigate race conditions
-      setHasPaidKey(true);
-      setShowSettings(false);
-      alert("API 密钥已更新，分析频率限制已放宽。");
+    if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+      try {
+        setIsKeyActionLoading(true);
+        await window.aistudio.openSelectKey();
+        // 按照规范：触发 openSelectKey 后应假设用户已尝试选择，直接进入后续逻辑
+        setHasPaidKey(true);
+        alert("请在弹出的对话框中选择您的付费项目密钥。选择完成后，分析成功率将大幅提升。");
+      } catch (err) {
+        console.error("Failed to open key selector", err);
+      } finally {
+        setIsKeyActionLoading(false);
+      }
+    } else {
+      alert("当前环境不支持在线选择 API 密钥。请确保您在 AI Studio 预览环境中运行。");
     }
   };
 
@@ -210,25 +222,27 @@ const App: React.FC = () => {
                 </h3>
                 <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600">当前密钥类型:</span>
+                    <span className="text-sm text-gray-600">当前密钥状态:</span>
                     {hasPaidKey ? (
                       <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold flex items-center">
-                        <CheckCircle className="w-3 h-3 mr-1" /> 高级付费 (无限制)
+                        <CheckCircle className="w-3 h-3 mr-1" /> 已接入付费项目
                       </span>
                     ) : (
                       <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold flex items-center">
-                        <AlertCircle className="w-3 h-3 mr-1" /> 免费预览 (有限制)
+                        <AlertCircle className="w-3 h-3 mr-1" /> 免费版 (有限制)
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-gray-400 mb-3">如果您遇到“服务器忙”报错，建议选择一个开了账单的 GCP 项目密钥。</p>
+                  <p className="text-[11px] text-gray-400 mb-3 leading-relaxed">遇到“服务器忙”通常是由于频率限制。切换到付费 GCP 项目的 Key 后，分析速度和并发量将显著提升。</p>
                   <button 
                     onClick={handleSelectKey}
-                    className="w-full py-2 bg-white border border-gray-200 rounded-md text-sm font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm flex items-center justify-center gap-2"
+                    disabled={isKeyActionLoading}
+                    className="w-full py-2 bg-white border border-gray-200 rounded-md text-sm font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
                   >
-                    <Key className="w-4 h-4 text-primary" /> 更换/选择付费密钥
+                    {isKeyActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4 text-primary" />}
+                    更换/选择付费密钥
                   </button>
-                  <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-[10px] text-primary hover:underline mt-2 block text-center">了解计费说明</a>
+                  <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-[10px] text-primary hover:underline mt-2 block text-center">了解计费与放宽限制说明</a>
                 </div>
               </div>
 
