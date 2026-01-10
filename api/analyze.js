@@ -1,14 +1,14 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
 const itemSchemaProperties = {
-  word: { type: Type.STRING, description: "必须严格等于输入列表中的原始字符串，不得修改空格或符号" },
+  word: { type: Type.STRING, description: "原始词语" },
   pinyin: { type: Type.STRING },
   hasDefinitionQuestion: { type: Type.BOOLEAN },
   targetChar: { type: Type.STRING, nullable: true },
   options: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true },
   correctIndex: { type: Type.INTEGER, nullable: true },
   hasMatchQuestion: { type: Type.BOOLEAN },
-  matchMode: { type: Type.STRING, description: "必须是以下之一: SAME_AS_TARGET, SYNONYM_CHOICE, or TWO_WAY_COMPARE" },
+  matchMode: { type: Type.STRING, description: "SAME_AS_TARGET, SYNONYM_CHOICE, or TWO_WAY_COMPARE" },
   matchContext: { type: Type.STRING, nullable: true },
   matchOptions: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true },
   matchCorrectIndex: { type: Type.INTEGER, nullable: true },
@@ -65,7 +65,7 @@ const poemSchema = {
       }
     }
   },
-  required: ["title", "author", "lines", "definitionQuestions"]
+  required: ["title", "author", "lines", "definitionQuestions", "fillQuestions"]
 };
 
 const ocrSchema = {
@@ -94,7 +94,6 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
   
   const dynamicApiKey = process.env.API_KEY;
   if (!dynamicApiKey) return res.status(500).json({ error: "Server API Key missing." });
@@ -109,30 +108,29 @@ export default async function handler(req, res) {
     let thinkingBudget = 0;
 
     if (type === 'batch-words') {
-      parts = [{ text: `你是一个资深的语文教育专家。请深度分析以下词语：${words.join(', ')}。
-      针对每个词语，必须生成有挑战性的“字词辨析题”（matchMode），可以是近义词填空、意思相同项选择或异同判断。
-      如果词语是“A vs B”或“A / B”形式，必须使用 TWO_WAY_COMPARE 模式。
-      输出 JSON 结果。` }];
+      parts = [{ text: `你是一个资深的语文教育专家。分析：${words.join(', ')}。
+      针对每个词语，【必须】产出辨析题数据(matchMode)。
+      如果是普通词，用 SAME_AS_TARGET 寻找释义相同项。
+      如果是“A vs B”形式，必须用 TWO_WAY_COMPARE。` }];
       schema = batchAnalysisSchema;
       thinkingBudget = 4000;
     } else if (type === 'poem') {
       parts = [{ text: `你是一个资深的语文教育专家。分析古诗词 "${text}"。
       
-      【强制任务】：
-      1. 提取全文、作者、朝代。
-      2. 必须生成【至少 3 道】针对诗中重点字的释义选择题。不要遗漏任何一首诗。
-      3. 每道释义题必须包含 4 个极具迷惑性的选项。
-      4. 生成 1-2 句诗句填空题。
+      【默写题规则】：
+      - 挑选 2-3 行进行默写，【严禁】重复出现同一行诗。
+      - 必须在诗句的【关键字/易错字】处挖空。
       
-      请先深入思考诗句中的多义字和生僻字，确保考点具有代表性。
-      输出必须严格符合 JSON 结构。` }];
+      【释义题规则】：
+      - 【必须】生成 3-5 个重点字词的释义选择题。
+      - 优先挑选具有多重含义、易读错或体现诗人情感的动词/形容词。
+      - 确保每首诗都有充足的练习内容。
+      
+      请在思考过程中先完整复述诗句，确保行索引(lineIndex)准确。` }];
       schema = poemSchema;
-      thinkingBudget = 8000;
+      thinkingBudget = 10000; // 显著增加思考时间
     } else if (type === 'ocr') {
-      parts = [
-        { inlineData: { mimeType: 'image/jpeg', data: image } },
-        { text: "提取图中的所有中文生词、成语。" }
-      ];
+      parts = [{ inlineData: { mimeType: 'image/jpeg', data: image } }, { text: "提取图中的所有中文生词、成语。" }];
       schema = ocrSchema;
     }
 
@@ -142,7 +140,7 @@ export default async function handler(req, res) {
       config: { 
         responseMimeType: 'application/json', 
         responseSchema: schema,
-        thinkingConfig: { thinkingBudget: thinkingBudget }
+        thinkingConfig: { thinkingBudget }
       }
     });
 
