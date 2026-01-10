@@ -8,8 +8,8 @@ const itemSchemaProperties = {
   options: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true },
   correctIndex: { type: Type.INTEGER, nullable: true },
   hasMatchQuestion: { type: Type.BOOLEAN },
-  matchMode: { type: Type.STRING, description: "SAME_AS_TARGET, SYNONYM_CHOICE, or TWO_WAY_COMPARE" },
-  matchContext: { type: Type.STRING, nullable: true },
+  matchMode: { type: Type.STRING, description: "SAME_AS_TARGET (找字义相同), SYNONYM_CHOICE (选词填空), or TWO_WAY_COMPARE (二选一判断)" },
+  matchContext: { type: Type.STRING, nullable: true, description: "题目涉及的句子，如果是选词填空，句子中必须包含 ( ) 符号" },
   matchOptions: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true },
   matchCorrectIndex: { type: Type.INTEGER, nullable: true },
   compareWordA: { type: Type.STRING, nullable: true },
@@ -109,24 +109,22 @@ export default async function handler(req, res) {
 
     if (type === 'batch-words') {
       parts = [{ text: `你是一个资深的语文教育专家。分析：${words.join(', ')}。
-      针对每个词语，【必须】产出辨析题数据(matchMode)。
-      如果是普通词，用 SAME_AS_TARGET 寻找释义相同项。
-      如果是“A vs B”形式，必须用 TWO_WAY_COMPARE。` }];
+      针对每个词语产出辨析题(matchMode)：
+      1. 如果是对比词（如“改变 vs 改善”），必须使用 SYNONYM_CHOICE 模式。
+         - matchContext 必须是一个包含 ( ) 的完整句子，如“政府决定 ( ) 环境。”
+         - matchOptions 是对比的两个词。
+      2. 如果是单个词，使用 SAME_AS_TARGET。
+         - 考察该词中某个重点字的含义，matchContext 包含该词，options 给出其他包含该字的词供选择。
+      3. 如果指定对比字义，用 TWO_WAY_COMPARE。` }];
       schema = batchAnalysisSchema;
       thinkingBudget = 4000;
     } else if (type === 'poem') {
       parts = [{ text: `你是一个资深的语文教育专家。分析古诗词 "${text}"。
       
       【默写题核心规则 - 严禁重复】：
-      - 从全诗中挑选 2-4 行进行默写。
-      - 【核心要求】：每行诗句在 fillQuestions 数组中**只能出现一次**。
-      - 严禁对同一行诗句生成多个不同的挖空版本（例如：第一行不能既出现在 index 0 又出现在 index 1）。
-      - 必须在诗句的【关键字/易错字】处挖空。
+      - 从全诗中挑选 2-4 行进行默写，每行只能出现一次。
       
-      【释义题规则】：
-      - 生成 3-5 个重点字词的释义选择题。
-      
-      请在思考过程中先完整列出诗句及其对应的 index，确保 fillQuestions 的 lineIndex 唯一且准确。` }];
+      请产出结构化 JSON。` }];
       schema = poemSchema;
       thinkingBudget = 10000;
     } else if (type === 'ocr') {

@@ -106,16 +106,16 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
     <div className="h-screen flex flex-col bg-gray-50">
       <div className="bg-white border-b p-4 flex flex-col gap-4 no-print shadow-sm z-10 shrink-0">
         <div className="flex items-center justify-between">
-            <button onClick={onBack} className="text-gray-500 hover:text-gray-800 flex items-center font-bold"><ArrowLeft className="w-5 h-5 mr-1" /> 返回</button>
+            <button onClick={onBack} className="text-gray-500 hover:text-gray-800 flex items-center font-bold transition-colors"><ArrowLeft className="w-5 h-5 mr-1" /> 返回</button>
             <div className="flex gap-2">
-                <button onClick={handleCopyText} className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center shadow-sm">
+                <button onClick={handleCopyText} className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center transition-all shadow-sm active:scale-95">
                   {copySuccess ? <Check className="w-4 h-4 mr-2 text-green-500" /> : <Copy className="w-4 h-4 mr-2" />}
                   复制文本
                 </button>
-                <button onClick={handleExportJson} className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center shadow-sm">
+                <button onClick={handleExportJson} className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center transition-all shadow-sm active:scale-95">
                   <FileJson className="w-4 h-4 mr-2 text-orange-500" /> 导出数据
                 </button>
-                <button onClick={handlePrint} disabled={isPrinting || filteredWords.length === 0} className="bg-primary hover:bg-indigo-700 text-white px-5 py-2 rounded-lg shadow-md flex items-center font-bold">
+                <button onClick={handlePrint} disabled={isPrinting || filteredWords.length === 0} className="bg-primary hover:bg-indigo-700 text-white px-5 py-2 rounded-lg shadow-md flex items-center font-bold transition-all active:scale-95">
                   <Printer className="w-5 h-5 mr-2" /> 打印试卷 (A4)
                 </button>
             </div>
@@ -174,8 +174,6 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
                 <h2 className="text-lg font-bold mb-6 font-kai flex items-center border-l-4 border-black pl-3">三、古诗文默写</h2>
                 <div className="space-y-10 pl-4 mt-4">
                   {questions.poemFill.map((w, idx) => {
-                    // 强力去重逻辑：基于“完整诗句文本”去重
-                    // 将 pre + answer + post 拼接，作为 Map 的 Key，确保每一行内容只出现一次
                     const uniqueLines = Array.from(new Map(
                       (w.poemData?.fillAnswers || []).map(f => [f.pre + f.answer + f.post, f])
                     ).values()) as any[];
@@ -205,7 +203,7 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
                 <div className="space-y-6 pl-4">
                   {questions.definition.map((w, idx) => (
                     <div key={idx} className="question-item">
-                      <div className="font-serif text-base mb-2">
+                      <div className="font-serif text-base mb-2 leading-relaxed">
                         {idx + 1}. “<span className="font-bold underline underline-offset-4">{w.word}</span>”中“<span className="font-bold text-lg">{w.definitionData?.targetChar}</span>”的意思是：（ &nbsp; ）
                       </div>
                       <div className="grid grid-cols-2 gap-x-8 gap-y-2 pl-6 text-sm font-kai">
@@ -225,30 +223,51 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
                <div className="space-y-8 pl-4">
                  {questions.definitionMatch.map((w, idx) => {
                    const m = w.definitionMatchData!;
-                   return (
-                    <div key={idx} className="question-item text-base">
-                      {m.mode === MatchMode.TWO_WAY_COMPARE ? (
-                        <div className="flex items-center justify-between border-2 border-gray-100 rounded-lg p-4">
-                          <div className="font-serif">{idx + 1}. 判断“<span className="font-bold">{m.targetChar}</span>”在下列词语中意思是否相同：</div>
-                          <div className="flex gap-8 font-serif font-bold text-lg items-center">
-                             <span className="border-b-2 border-black px-2">{m.compareWordA}</span> 
-                             <span className="text-gray-300">vs</span>
-                             <span className="border-b-2 border-black px-2">{m.compareWordB}</span>
-                             <span className="ml-4 text-sm text-gray-400 font-sans border border-gray-300 px-2 rounded">（ &nbsp; ）</span>
+                   
+                   // 根据模式渲染不同的题干和内容
+                   if (m.mode === MatchMode.TWO_WAY_COMPARE) {
+                     return (
+                        <div key={idx} className="question-item text-base">
+                          <div className="flex items-center justify-between border-2 border-gray-100 rounded-lg p-4">
+                            <div className="font-serif">{idx + 1}. 判断“<span className="font-bold">{m.targetChar}</span>”在下列词语中意思是否相同：</div>
+                            <div className="flex gap-8 font-serif font-bold text-lg items-center">
+                               <span className="border-b-2 border-black px-2">{m.compareWordA}</span> 
+                               <span className="text-gray-300">vs</span>
+                               <span className="border-b-2 border-black px-2">{m.compareWordB}</span>
+                               <span className="ml-4 text-sm text-gray-400 font-sans border border-gray-300 px-2 rounded">（ &nbsp; ）</span>
+                            </div>
                           </div>
                         </div>
-                      ) : (
-                        <div className="space-y-3">
-                          <div className="font-serif">{idx + 1}. 与“<span className="font-bold underline underline-offset-4">{m.context || w.word}</span>”中“<span className="font-bold text-lg">{m.targetChar}</span>”意思相同的一项是：（ &nbsp; ）</div>
+                     );
+                   } else if (m.mode === MatchMode.SYNONYM_CHOICE) {
+                     return (
+                        <div key={idx} className="question-item space-y-3">
+                           <div className="font-serif text-base leading-relaxed">
+                              {idx + 1}. 选出最恰当的词语填入括号内：<br/>
+                              “<span className="font-sans italic">{m.context || '... ( ) ...'}</span>”
+                           </div>
+                           <div className="grid grid-cols-2 gap-4 pl-6 text-sm font-kai">
+                              {m.options?.slice(0, 4).map((opt, oIdx) => (
+                                <div key={oIdx} className="flex"><span className="mr-2 font-bold">{String.fromCharCode(65 + oIdx)}.</span><span>{opt}</span></div>
+                              ))}
+                           </div>
+                        </div>
+                     );
+                   } else {
+                     // 默认为 SAME_AS_TARGET
+                     return (
+                        <div key={idx} className="question-item space-y-3">
+                          <div className="font-serif text-base leading-relaxed">
+                            {idx + 1}. 与“<span className="font-bold underline underline-offset-4">{m.context || w.word}</span>”中“<span className="font-bold text-lg">{m.targetChar}</span>”意思相同的一项是：（ &nbsp; ）
+                          </div>
                           <div className="grid grid-cols-2 gap-4 pl-6 text-sm font-kai">
                             {m.options?.slice(0, 4).map((opt, oIdx) => (
                               <div key={oIdx} className="flex"><span className="mr-2 font-bold">{String.fromCharCode(65 + oIdx)}.</span><span>{opt}</span></div>
                             ))}
                           </div>
                         </div>
-                      )}
-                    </div>
-                   );
+                     );
+                   }
                  })}
                </div>
              </div>
