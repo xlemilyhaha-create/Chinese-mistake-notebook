@@ -1,7 +1,9 @@
 
 import { AnalysisResult, EntryType } from "../types";
 
-const analyzeWithGeminiBackend = async (payload: any) => {
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const analyzeWithGeminiBackend = async (payload: any, retries = 2) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 60000); 
 
@@ -12,15 +14,28 @@ const analyzeWithGeminiBackend = async (payload: any) => {
       body: JSON.stringify(payload),
       signal: controller.signal
     });
+    
     clearTimeout(timeoutId);
 
+    if (response.status === 429 && retries > 0) {
+      console.warn("Rate limited, retrying in 3s...");
+      await delay(3000);
+      return analyzeWithGeminiBackend(payload, retries - 1);
+    }
+
     if (!response.ok) {
-      throw new Error(`API failure: ${response.status}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `API failure: ${response.status}`);
     }
 
     return await response.json();
   } catch (error: any) {
     clearTimeout(timeoutId);
+    if (retries > 0 && (error.name === 'AbortError' || error.message.includes('timeout'))) {
+      console.warn("Request timed out, retrying...");
+      await delay(1000);
+      return analyzeWithGeminiBackend(payload, retries - 1);
+    }
     throw error;
   }
 };
@@ -38,7 +53,6 @@ export const analyzeWordsBatch = async (words: string[]): Promise<AnalysisResult
   }
 };
 
-// Keep single for compatibility or poems
 export const analyzeWord = async (word: string): Promise<AnalysisResult> => {
   const res = await analyzeWordsBatch([word]);
   return res[0];

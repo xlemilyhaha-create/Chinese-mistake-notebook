@@ -78,6 +78,7 @@ const ocrSchema = {
 const cleanJson = (text) => {
   if (!text) return '{}';
   let cleaned = text.trim();
+  // Remove markdown code blocks if present
   cleaned = cleaned.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
   const firstBrace = cleaned.indexOf('{');
   const lastBrace = cleaned.lastIndexOf('}');
@@ -101,25 +102,26 @@ export default async function handler(req, res) {
     const ai = new GoogleGenAI({ apiKey });
     const { type, text, words, image } = req.body;
 
-    let model = 'gemini-2.5-flash';
+    // Use gemini-3-flash-preview for better reasoning and JSON adherence
+    let model = 'gemini-3-flash-preview';
     let parts = [];
     let schema = null;
 
     if (type === 'batch-words') {
-      parts = [{ text: `你是一个专业的语文老师。请逐一分析以下词语或成语：${words.join(', ')}。
+      parts = [{ text: `你是一个资深的语文教育专家。请分析以下词语：${words.join(', ')}。
       要求：
-      1. 为每个词提供准确的拼音。
-      2. 生成一道考察词中重点单字含义的选择题（4个选项，指定正确项索引）。
-      3. 生成一道“字义辨析题”：给出一个含有相同重点单字的4个不同词语，其中一个词语里该字的含义必须与原词相同。
-      4. 请确保输出结果是一个完整的 JSON 数组，包含所有请求的词语，不要截断。` }];
+      1. 为每个词提供精准的拼音。
+      2. 提取词中一个重点单字，生成一道释义题（4个选项）。
+      3. 生成一道字义辨析题（在不同语境下该单字意思是否相同）。
+      输出必须是纯净的 JSON 格式。` }];
       schema = batchAnalysisSchema;
     } else if (type === 'poem') {
-      parts = [{ text: `Analyze poem "${text}". JSON output: title, author, fill questions, definition questions.` }];
+      parts = [{ text: `分析古诗 "${text}"。输出 JSON 包含标题、作者、全文、填空题和释义题。` }];
       schema = poemSchema;
     } else if (type === 'ocr') {
       parts = [
         { inlineData: { mimeType: 'image/jpeg', data: image } },
-        { text: "Extract and list only the Chinese words or idioms from this worksheet. Ignore single non-content characters." }
+        { text: "提取图中的所有中文生词、成语。排除单个无意义字符。" }
       ];
       schema = ocrSchema;
     } else {
@@ -135,6 +137,10 @@ export default async function handler(req, res) {
       }
     });
 
+    if (!response.text) {
+      throw new Error("AI returned empty response");
+    }
+
     const cleanText = cleanJson(response.text);
     const jsonResponse = JSON.parse(cleanText);
     
@@ -142,6 +148,8 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error("Backend API Error:", error);
-    return res.status(500).json({ error: error.message || "Internal Server Error" });
+    // Return specific status codes if possible
+    const statusCode = error.message?.includes('429') ? 429 : 500;
+    return res.status(statusCode).json({ error: error.message || "Internal Server Error" });
   }
 }

@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { Loader2, CheckCircle, AlertCircle, Camera, Image as ImageIcon, X, ScrollText, Type } from 'lucide-react';
+import { Loader2, CheckCircle, AlertCircle, Camera, Image as ImageIcon, X, ScrollText, Type, RefreshCw } from 'lucide-react';
 import { analyzeWordsBatch, extractWordsFromImage, analyzePoem } from '../services/geminiService';
 import { WordEntry, QuestionType, AnalysisResult, EntryType, TestStatus } from '../types';
 
@@ -22,9 +22,6 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
   const [inputText, setInputText] = useState('');
   const [defaultTypes, setDefaultTypes] = useState<QuestionType[]>([QuestionType.PINYIN, QuestionType.DICTATION]);
   const [poemInput, setPoemInput] = useState('');
-  const [showCameraModal, setShowCameraModal] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<string>('');
   const [drafts, setDrafts] = useState<DraftEntry[]>([]);
@@ -38,38 +35,23 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
 
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-  const handleAnalyzeWords = async () => {
-    const words = getUniqueWords(inputText);
-    if (words.length === 0) return;
+  // 核心批量分析逻辑
+  const performAnalysis = async (wordsToAnalyze: string[]) => {
+    if (wordsToAnalyze.length === 0) return;
     
     setIsProcessing(true);
-    setProcessingStatus('正在初始化队列...');
     
-    const initialDrafts: DraftEntry[] = words.map(w => ({
-      id: crypto.randomUUID(),
-      word: w,
-      analysis: null,
-      enabledTypes: [...defaultTypes],
-      status: 'pending',
-      type: EntryType.WORD
-    }));
-    
-    setDrafts(initialDrafts);
-    setInputText('');
-
-    // 减小分块大小：由 10 改为 5，以降低超时风险并适应 API 速率限制
     const CHUNK_SIZE = 5;
     const wordChunks = [];
-    for (let i = 0; i < words.length; i += CHUNK_SIZE) {
-      wordChunks.push(words.slice(i, i + CHUNK_SIZE));
+    for (let i = 0; i < wordsToAnalyze.length; i += CHUNK_SIZE) {
+      wordChunks.push(wordsToAnalyze.slice(i, i + CHUNK_SIZE));
     }
 
     let processedCount = 0;
 
     for (const chunk of wordChunks) {
-      // 更新状态为正在分析
-      setDrafts(prev => prev.map(d => chunk.includes(d.word) ? { ...d, status: 'analyzing' } : d));
-      setProcessingStatus(`正在分析... (${processedCount}/${words.length})`);
+      setDrafts(prev => prev.map(d => chunk.includes(d.word) && d.status !== 'done' ? { ...d, status: 'analyzing' } : d));
+      setProcessingStatus(`正在分析... (${processedCount}/${wordsToAnalyze.length})`);
 
       try {
         const batchResults = await analyzeWordsBatch(chunk);
@@ -89,19 +71,45 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
           return { ...d, analysis: result, enabledTypes: types, status: 'done' };
         }));
       } catch (e) {
-        setDrafts(prev => prev.map(d => chunk.includes(d.word) ? { ...d, status: 'error' } : d));
+        console.error("Chunk failed:", chunk, e);
+        setDrafts(prev => prev.map(d => chunk.includes(d.word) && d.status === 'analyzing' ? { ...d, status: 'error' } : d));
       }
       
       processedCount += chunk.length;
-      
-      // 关键改进：在批次之间引入 1.5 秒延迟，防止触发 API 速率限制
-      if (processedCount < words.length) {
-        await delay(1500);
+      if (processedCount < wordsToAnalyze.length) {
+        await delay(2000); // 批次间强制等待 2 秒
       }
     }
 
     setProcessingStatus('');
     setIsProcessing(false);
+  };
+
+  const handleAnalyzeWords = async () => {
+    const words = getUniqueWords(inputText);
+    if (words.length === 0) return;
+    
+    const initialDrafts: DraftEntry[] = words.map(w => ({
+      id: crypto.randomUUID(),
+      word: w,
+      analysis: null,
+      enabledTypes: [...defaultTypes],
+      status: 'pending',
+      type: EntryType.WORD
+    }));
+    
+    setDrafts(initialDrafts);
+    setInputText('');
+    await performAnalysis(words);
+  };
+
+  const handleRetryFailed = async () => {
+    const failedWords = drafts.filter(d => d.status === 'error').map(d => d.word);
+    if (failedWords.length === 0) return;
+    
+    // 重置这些项的状态
+    setDrafts(prev => prev.map(d => d.status === 'error' ? { ...d, status: 'pending' } : d));
+    await performAnalysis(failedWords);
   };
 
   const handleAnalyzePoem = async () => {
@@ -186,6 +194,8 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     }));
   };
 
+  const hasFailedItems = drafts.some(d => d.status === 'error');
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
       <div className="flex items-center gap-4 mb-6 border-b border-gray-100 pb-2">
@@ -241,11 +251,16 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
         <div className="mt-8 border-t border-gray-100 pt-6">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-md font-semibold text-gray-700">识别结果 ({drafts.length})</h3>
-            <button onClick={handleSaveAll} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center shadow-sm"><CheckCircle className="w-4 h-4 mr-2" /> 确认添加全部</button>
+            <div className="flex gap-2">
+              {hasFailedItems && (
+                <button onClick={handleRetryFailed} disabled={isProcessing} className="bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-200 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center disabled:opacity-50"><RefreshCw className={`w-4 h-4 mr-2 ${isProcessing ? 'animate-spin' : ''}`} /> 重试失败项</button>
+              )}
+              <button onClick={handleSaveAll} disabled={isProcessing} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center shadow-sm disabled:opacity-50"><CheckCircle className="w-4 h-4 mr-2" /> 确认添加全部</button>
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-2">
             {drafts.map((draft) => (
-              <div key={draft.id} className="bg-gray-50 rounded-lg p-4 border border-gray-200 relative group">
+              <div key={draft.id} className={`rounded-lg p-4 border relative group transition-colors ${draft.status === 'error' ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
                 <button onClick={() => setDrafts(prev => prev.filter(d => d.id !== draft.id))} className="absolute top-2 right-2 text-gray-400 hover:text-red-500"><X className="w-4 h-4" /></button>
                 <div className="flex flex-col gap-1">
                   <h4 className="font-bold text-gray-900">{draft.word} <span className="text-primary text-sm font-normal ml-2">{draft.analysis?.pinyin}</span></h4>
