@@ -31,79 +31,81 @@
       @media print {
         @page {
           size: A4;
-          margin: 10mm 15mm 15mm 15mm; /* 减小上边距 */
+          margin: 10mm 0; /* 垂直留白交给内部 padding 控制 */
         }
         
-        body {
-          overflow: visible !important;
+        /* 强制重置所有父容器，消除 Flexbox 打印 bug */
+        html, body, #root, [class*="h-screen"], [class*="flex-1"], [class*="overflow-"] {
           height: auto !important;
-          counter-reset: page; /* 初始化页码计数器 */
+          min-height: 0 !important;
+          max-height: none !important;
+          overflow: visible !important;
+          display: block !important;
+          background: white !important;
+          padding: 0 !important;
+          margin: 0 !important;
         }
 
-        /* HIDE EVERYTHING by default */
-        body * {
-          visibility: hidden;
+        body {
+          counter-reset: page;
         }
 
-        /* SHOW ONLY the printable root and its children */
-        #printable-root, #printable-root * {
-          visibility: visible;
+        /* 隐藏非打印内容 */
+        .no-print {
+          display: none !important;
         }
 
-        /* RESET layout context for the printable root */
+        /* 打印容器置顶并恢复自然流 */
         #printable-root {
-          position: absolute;
-          left: 0;
-          top: 0;
-          width: 100%;
-          margin: 0;
-          padding: 0;
-          background: white;
-          color: black;
+          display: block !important;
+          visibility: visible !important;
+          position: static !important;
+          width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
         }
 
-        /* 自动页码逻辑 */
+        #printable-root * {
+          visibility: visible !important;
+        }
+
+        /* 页码页脚 */
         .page-footer {
           position: fixed;
-          bottom: 0;
+          bottom: 10mm;
           left: 0;
           right: 0;
           text-align: center;
           font-size: 10pt;
           font-family: serif;
           visibility: visible !important;
+          border-top: none !important;
         }
         
         .page-footer::after {
           counter-increment: page;
           content: "第 " counter(page) " 页";
-          visibility: visible !important;
         }
 
-        /* Ensure clean page breaks */
+        /* 分页控制：题目内部严禁断开，但题目之间可以断 */
         .question-item {
-          break-inside: avoid;
-          page-break-inside: avoid;
-          margin-bottom: 0.75rem; /* 稍微紧凑一点 */
+          break-inside: avoid-page !important;
+          page-break-inside: avoid !important;
+          margin-bottom: 1rem;
         }
 
-        .section-title {
-          break-after: avoid;
-          page-break-after: avoid;
-          margin-top: 1rem;
-          margin-bottom: 0.5rem;
-        }
-        
+        /* 强制分页符 */
         .print-break-before {
-          break-before: page;
-          page-break-before: always;
-          display: block;
-          height: 0; 
+          break-before: page !important;
+          page-break-before: always !important;
+          height: 0;
+          margin: 0;
         }
         
-        /* Hide non-print elements definitively */
-        .no-print {
-          display: none !important;
+        /* 保持背景色/线条可见 */
+        * {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
         }
       }
       

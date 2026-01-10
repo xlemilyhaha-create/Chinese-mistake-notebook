@@ -83,13 +83,13 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
 
   const renderPinyinBoxes = (entry: WordEntry) => {
     const chars = entry.word.split('');
-    const pinyinParts = entry.pinyin.trim().split(/\s+/);
+    const pinyinParts = (entry.pinyin || '').trim().split(/\s+/);
     const isAligned = chars.length === pinyinParts.length;
     return (
-      <div className="flex gap-1 justify-center">
+      <div className="flex gap-1 justify-center break-inside-avoid">
         {chars.map((char, idx) => (
           <div key={idx} className="flex flex-col items-center">
-             <div className="h-6 flex items-end justify-center w-12 text-center">
+             <div className="h-6 flex items-end justify-center w-12 text-center overflow-visible">
                <span className="text-[10px] text-gray-400 font-sans leading-none">{isAligned ? pinyinParts[idx] : (idx === 0 ? entry.pinyin : '')}</span>
              </div>
              <div className="w-12 h-12 border border-black relative bg-white">
@@ -103,7 +103,7 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
+    <div className="min-h-screen flex flex-col bg-gray-50 print:bg-white">
       <div className="bg-white border-b p-4 flex flex-col gap-4 no-print shadow-sm z-10 shrink-0">
         <div className="flex items-center justify-between">
             <button onClick={onBack} className="text-gray-500 hover:text-gray-800 flex items-center font-bold transition-colors"><ArrowLeft className="w-5 h-5 mr-1" /> 返回</button>
@@ -129,12 +129,12 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto bg-gray-100 p-8 flex justify-center">
-        <div id="printable-root" className="relative">
+      <div className="flex-1 bg-gray-100 p-8 flex justify-center print:bg-white print:p-0 print:block">
+        <div id="printable-root" className="print:w-full print:m-0 print:p-0">
           <div className="page-footer hidden print:block"></div>
 
           {/* 试卷主页 */}
-          <div className="bg-white shadow-lg w-[210mm] min-h-[297mm] mx-auto p-[20mm] box-border relative mb-8 text-black">
+          <div className="bg-white shadow-lg w-[210mm] min-h-[297mm] mx-auto p-[15mm] box-border relative mb-8 text-black print:shadow-none print:w-full print:m-0 print:min-h-0">
             <div className="text-center border-b-2 border-black pb-4 mb-8">
               <h1 className="text-2xl font-bold font-serif tracking-[0.2em] mb-2">语文错题专项强化练习卷</h1>
               <div className="flex justify-between text-sm font-kai px-12 mt-4">
@@ -145,13 +145,13 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
             </div>
 
             {questions.pinyin.length > 0 && (
-              <div className="mb-10">
+              <div className="mb-10 break-inside-auto">
                 <h2 className="text-lg font-bold mb-6 font-kai flex items-center border-l-4 border-black pl-3">一、看汉字，写拼音</h2>
                 <div className="flex flex-wrap gap-x-12 gap-y-10 pl-4">
                   {questions.pinyin.map((w, idx) => (
-                    <div key={idx} className="flex flex-col items-center w-[80px]">
+                    <div key={idx} className="flex flex-col items-center w-[80px] break-inside-avoid mb-2">
                       <div className="w-full h-8 border-b-2 border-black mb-2"></div>
-                      <div className="font-serif text-xl font-bold">{w.word}</div>
+                      <div className="font-serif text-xl font-bold whitespace-nowrap">{w.word}</div>
                     </div>
                   ))}
                 </div>
@@ -159,7 +159,7 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
             )}
 
             {questions.dictation.length > 0 && (
-               <div className="mb-10">
+               <div className="mb-10 break-inside-auto">
                <h2 className="text-lg font-bold mb-6 font-kai flex items-center border-l-4 border-black pl-3">二、看拼音，写词语</h2>
                <div className="flex flex-wrap gap-x-8 gap-y-12 pl-4">
                  {questions.dictation.map((w, idx) => (
@@ -170,7 +170,7 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
             )}
 
             {questions.poemFill.length > 0 && (
-              <div className="mb-10">
+              <div className="mb-10 break-inside-auto">
                 <h2 className="text-lg font-bold mb-6 font-kai flex items-center border-l-4 border-black pl-3">三、古诗文默写</h2>
                 <div className="space-y-10 pl-4 mt-4">
                   {questions.poemFill.map((w, idx) => {
@@ -198,7 +198,7 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
             )}
 
             {questions.definition.length > 0 && (
-              <div className="mb-10">
+              <div className="mb-10 break-inside-auto">
                 <h2 className="text-lg font-bold mb-6 font-kai flex items-center border-l-4 border-black pl-3">四、词语释义选择</h2>
                 <div className="space-y-6 pl-4">
                   {questions.definition.map((w, idx) => (
@@ -218,13 +218,12 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
             )}
 
             {questions.definitionMatch.length > 0 && (
-               <div className="mb-10">
+               <div className="mb-10 break-inside-auto">
                <h2 className="text-lg font-bold mb-6 font-kai flex items-center border-l-4 border-black pl-3">五、字词深度辨析</h2>
                <div className="space-y-8 pl-4">
                  {questions.definitionMatch.map((w, idx) => {
                    const m = w.definitionMatchData!;
                    
-                   // 根据模式渲染不同的题干和内容
                    if (m.mode === MatchMode.TWO_WAY_COMPARE) {
                      return (
                         <div key={idx} className="question-item text-base">
@@ -254,7 +253,6 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
                         </div>
                      );
                    } else {
-                     // 默认为 SAME_AS_TARGET
                      return (
                         <div key={idx} className="question-item space-y-3">
                           <div className="font-serif text-base leading-relaxed">
@@ -277,30 +275,30 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
           <div className="print-break-before"></div>
 
           {/* 答案页 */}
-          <div className="bg-white shadow-lg w-[210mm] min-h-[297mm] mx-auto p-[20mm] box-border relative text-black">
+          <div className="bg-white shadow-lg w-[210mm] min-h-[297mm] mx-auto p-[20mm] box-border relative text-black print:shadow-none print:w-full print:m-0">
             <div className="text-center border-b-2 border-black pb-4 mb-10">
               <h1 className="text-xl font-bold font-serif tracking-widest">参考答案与解析</h1>
             </div>
             
             <div className="space-y-10">
-                <div className="grid grid-cols-2 gap-12">
+                <div className="grid grid-cols-2 gap-12 print:flex print:flex-wrap">
                   {questions.pinyin.length > 0 && (
-                    <div className="border-t pt-4">
+                    <div className="border-t pt-4 print:w-1/2">
                       <h3 className="font-bold text-base mb-4 bg-gray-50 p-2">1. 看汉字写拼音</h3>
                       <div className="space-y-2 text-sm">{questions.pinyin.map((w, i) => (<div key={i} className="flex justify-between border-b border-dashed"><span>{w.word}</span><span className="font-bold text-primary">{w.pinyin}</span></div>))}</div>
                     </div>
                   )}
                   {questions.dictation.length > 0 && (
-                    <div className="border-t pt-4">
+                    <div className="border-t pt-4 print:w-1/2">
                       <h3 className="font-bold text-base mb-4 bg-gray-50 p-2">2. 看拼音写词语</h3>
                       <div className="space-y-2 text-sm">{questions.dictation.map((w, i) => (<div key={i} className="flex justify-between border-b border-dashed"><span>{w.pinyin}</span><span className="font-bold text-primary">{w.word}</span></div>))}</div>
                     </div>
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-12">
+                <div className="grid grid-cols-2 gap-12 print:flex print:flex-wrap">
                     {questions.definition.length > 0 && (
-                      <div className="border-t pt-4">
+                      <div className="border-t pt-4 print:w-1/2">
                         <h3 className="font-bold text-base mb-4 bg-gray-50 p-2">4. 词语释义答案</h3>
                         <div className="grid grid-cols-4 gap-4 text-sm font-bold">
                           {questions.definition.map((w, i) => (<div key={i}>{i+1}. {String.fromCharCode(65 + (w.definitionData?.correctIndex || 0))}</div>))}
@@ -308,7 +306,7 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
                       </div>
                     )}
                     {questions.definitionMatch.length > 0 && (
-                      <div className="border-t pt-4">
+                      <div className="border-t pt-4 print:w-1/2">
                         <h3 className="font-bold text-base mb-4 bg-gray-50 p-2">5. 字词辨析答案</h3>
                         <div className="grid grid-cols-4 gap-4 text-sm font-bold">
                           {questions.definitionMatch.map((w, i) => {
