@@ -8,7 +8,7 @@ const itemSchemaProperties = {
   options: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true },
   correctIndex: { type: Type.INTEGER, nullable: true },
   hasMatchQuestion: { type: Type.BOOLEAN },
-  matchMode: { type: Type.STRING, description: "SAME_AS_TARGET, SYNONYM_CHOICE, or TWO_WAY_COMPARE" },
+  matchMode: { type: Type.STRING, description: "必须是以下之一: SAME_AS_TARGET, SYNONYM_CHOICE, or TWO_WAY_COMPARE" },
   matchContext: { type: Type.STRING, nullable: true },
   matchOptions: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true },
   matchCorrectIndex: { type: Type.INTEGER, nullable: true },
@@ -106,21 +106,28 @@ export default async function handler(req, res) {
     let model = 'gemini-3-flash-preview';
     let parts = [];
     let schema = null;
+    let thinkingBudget = 0;
 
     if (type === 'batch-words') {
-      parts = [{ text: `你是一个资深的语文教育专家。请分析以下词语：${words.join(', ')}。输出 JSON 结果。` }];
+      parts = [{ text: `你是一个资深的语文教育专家。请深度分析以下词语：${words.join(', ')}。
+      针对每个词语，必须生成有挑战性的“字词辨析题”（matchMode），可以是近义词填空、意思相同项选择或异同判断。
+      如果词语是“A vs B”或“A / B”形式，必须使用 TWO_WAY_COMPARE 模式。
+      输出 JSON 结果。` }];
       schema = batchAnalysisSchema;
+      thinkingBudget = 4000;
     } else if (type === 'poem') {
       parts = [{ text: `你是一个资深的语文教育专家。分析古诗词 "${text}"。
       
       【强制任务】：
       1. 提取全文、作者、朝代。
-      2. 必须从诗句中挑选 2-4 个【重点字词】（通常是具有特定含义的动词、形容词或名词）生成释义选择题。
-      3. 每道释义题必须包含 4 个极具迷惑性的选项，并指定正确答案索引。
+      2. 必须生成【至少 3 道】针对诗中重点字的释义选择题。不要遗漏任何一首诗。
+      3. 每道释义题必须包含 4 个极具迷惑性的选项。
       4. 生成 1-2 句诗句填空题。
       
+      请先深入思考诗句中的多义字和生僻字，确保考点具有代表性。
       输出必须严格符合 JSON 结构。` }];
       schema = poemSchema;
+      thinkingBudget = 8000;
     } else if (type === 'ocr') {
       parts = [
         { inlineData: { mimeType: 'image/jpeg', data: image } },
@@ -132,7 +139,11 @@ export default async function handler(req, res) {
     const response = await ai.models.generateContent({
       model: model,
       contents: { parts },
-      config: { responseMimeType: 'application/json', responseSchema: schema }
+      config: { 
+        responseMimeType: 'application/json', 
+        responseSchema: schema,
+        thinkingConfig: { thinkingBudget: thinkingBudget }
+      }
     });
 
     return res.status(200).json(JSON.parse(cleanJson(response.text)));
