@@ -29,21 +29,16 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const getUniqueWords = (text: string) => {
-    // 允许 A vs B, A/B 这种格式作为整体
-    // 先处理 vs, /, | 分隔符，暂时替换为空格保护
-    const normalized = text.replace(/\s+(vs|VS)\s+/g, ' $1 ')
+    const normalized = text.replace(/\s+(vs|VS)\s+/g, ' vs ')
                            .replace(/([^\s])(\/|\|)([^\s])/g, '$1 / $3');
     
-    // 按行或逗号切分
     const lines = normalized.split(/[\n,，、;；]+/).map(w => w.trim()).filter(w => w.length > 0);
     
     const results: string[] = [];
     lines.forEach(line => {
-      // 如果一行里包含 vs 或 /，视为一个词组
       if (line.toLowerCase().includes(' vs ') || line.includes('/') || line.includes('和')) {
         results.push(line);
       } else {
-        // 否则按空格切分出单个词
         const parts = line.split(/\s+/).filter(p => p.length > 0);
         results.push(...parts);
       }
@@ -70,20 +65,21 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
         const batchResults = await analyzeWordsBatch(chunk);
         setDrafts(prev => prev.map(d => {
           if (!chunk.includes(d.word)) return d;
-          const result = batchResults.find(r => r.word === d.word);
+          
+          // 模糊匹配：忽略空格和大小写
+          const findMatch = (target: string) => {
+             const clean = (s: string) => s.replace(/\s+/g, '').toLowerCase();
+             return batchResults.find(r => clean(r.word) === clean(target));
+          };
+
+          const result = findMatch(d.word);
           if (result) {
             let types = [...d.enabledTypes];
-            // 自动检测哪些考点可用
             if (!result.definitionData) types = types.filter(t => t !== QuestionType.DEFINITION);
             if (!result.definitionMatchData) types = types.filter(t => t !== QuestionType.DEFINITION_MATCH);
-            // 如果是近义词对，通常不需要单独考拼音书写，重点是辨析
-            if (d.word.includes(' vs ') || d.word.includes('/')) {
-                // 可选：对于词组自动隐藏注音和书写，只留辨析
-                // types = [QuestionType.DEFINITION_MATCH];
-            }
             return { ...d, analysis: result, enabledTypes: types, status: 'done' };
           } else {
-            return { ...d, status: 'error', errorMsg: 'AI未返回结果，请重试' };
+            return { ...d, status: 'error', errorMsg: 'AI未返回结果' };
           }
         }));
       } catch (e: any) {
@@ -92,8 +88,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
       }
       processedCount += chunk.length;
       if (processedCount < wordsToAnalyze.length) {
-        setProcessingStatus(`休息中... (${processedCount}/${wordsToAnalyze.length})`);
-        await delay(4000);
+        await delay(3000);
       }
     }
     setProcessingStatus('');
@@ -272,7 +267,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-2">
             {drafts.map((draft) => (
-              <div key={draft.id} className={`rounded-lg p-4 border relative group transition-all duration-300 ${draft.status === 'error' ? 'bg-red-50 border-red-200' : draft.status === 'analyzing' ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-gray-200'}`}>
+              <div key={draft.id} className={`rounded-lg p-4 border relative group transition-all duration-300 ${draft.status === 'error' ? 'bg-red-50 border-red-200' : draft.status === 'analyzing' ? 'bg-indigo-50 border-indigo-200 shadow-inner' : 'bg-gray-50 border-gray-200'}`}>
                 <button onClick={() => setDrafts(prev => prev.filter(d => d.id !== draft.id))} className="absolute top-2 right-2 text-gray-400 hover:text-red-500 transition-colors"><X className="w-4 h-4" /></button>
                 <div className="flex flex-col gap-1">
                   <h4 className="font-bold text-gray-900 flex items-center gap-2">
@@ -287,8 +282,8 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
                           <>
                             {['注音', '书写', '释义', '辨析'].map((label, idx) => {
                               const type = [QuestionType.PINYIN, QuestionType.DICTATION, QuestionType.DEFINITION, QuestionType.DEFINITION_MATCH][idx];
-                              const isAvailable = (idx < 2 && !draft.word.includes(' vs ')) || (idx === 2 && draft.analysis?.definitionData) || (idx === 3 && draft.analysis?.definitionMatchData);
-                              if (!isAvailable && idx !== 3) return null; // 辨析总是可以尝试开启
+                              const isAvailable = (idx < 2 && !draft.word.includes(' vs ') && !draft.word.includes('/')) || (idx === 2 && draft.analysis?.definitionData) || (idx === 3 && draft.analysis?.definitionMatchData);
+                              if (!isAvailable && idx !== 3) return null;
                               return <button key={type} onClick={() => toggleEditType(draft.id, type)} className={`px-2 py-0.5 text-[10px] font-bold rounded border transition-colors ${draft.enabledTypes.includes(type) ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}>{label}</button>
                             })}
                           </>

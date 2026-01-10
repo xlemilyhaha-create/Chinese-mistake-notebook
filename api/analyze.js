@@ -4,7 +4,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 const apiKey = process.env.API_KEY;
 
 const itemSchemaProperties = {
-  word: { type: Type.STRING },
+  word: { type: Type.STRING, description: "必须严格等于输入列表中的原始字符串，不得修改空格或符号" },
   pinyin: { type: Type.STRING },
   hasDefinitionQuestion: { type: Type.BOOLEAN },
   targetChar: { type: Type.STRING, nullable: true },
@@ -111,19 +111,21 @@ export default async function handler(req, res) {
 
     if (type === 'batch-words') {
       parts = [{ text: `你是一个资深的语文教育专家。请分析以下词语：${words.join(', ')}。
-      要求：
+      
+      【强制要求】：
+      JSON结果中每个item的 "word" 字段必须【严格等于】我提供给你的原始字符串（包括空格和符号）。例如我给你 "改变vs改善"，你的word字段必须是 "改变vs改善"。
+
+      【任务细则】：
       1. 如果输入是类似 "改善 vs 改变" 或 "改善/改变" 这种词组对：
          - 强制生成辨析题模式 B (SYNONYM_CHOICE)。
          - 提供一个选词填空的语境句子。
          - matchOptions 必须包含且仅包含这两个词。
-         - pinyin 可以提供两个词的组合，如 "gǎi shàn / gǎi biàn"。
+         - pinyin 提供两个词的组合，如 "gǎi shàn / gǎi biàn"。
       2. 如果输入是普通单字词：
          - 为每个词提供精准拼音。
          - 提取词中重点单字生成释义选择题。
-         - 辨析题从模式A、B、C中选一个最合适的：
-           - A(SAME_AS_TARGET)：给出一个语境词让学生从4个词中选同义词。
-           - B(SYNONYM_CHOICE)：选词填空。
-           - C(TWO_WAY_COMPARE)：对比两个词中同一个字的意思是否相同。
+         - 辨析题从模式A、B、C中选一个最合适的。
+
       输出必须严格符合提供的 JSON Schema 格式。` }];
       schema = batchAnalysisSchema;
     } else if (type === 'poem') {
