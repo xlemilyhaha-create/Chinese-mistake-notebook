@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BookOpen, FileText, Settings, Database, Download, Upload, Trash2, Key, Save, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { BookOpen, FileText, Settings, Database, Download, Upload, Trash2, Key, Save, Loader2, CheckCircle, AlertCircle, Globe, Info } from 'lucide-react';
 import WordEntryForm from './components/WordEntryForm';
 import WordList from './components/WordList';
 import ExamGenerator from './components/ExamGenerator';
@@ -16,10 +16,6 @@ declare global {
     openSelectKey: () => Promise<void>;
   }
   interface Window {
-    /**
-     * Fix for "All declarations of 'aistudio' must have identical modifiers".
-     * Making it optional to match potential pre-existing definitions in the environment.
-     */
     aistudio?: AIStudio;
   }
 }
@@ -30,37 +26,37 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [hasPaidKey, setHasPaidKey] = useState(false);
+  const [isAiStudioEnv, setIsAiStudioEnv] = useState(false);
   const [isKeyActionLoading, setIsKeyActionLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- API Functions ---
-  
-  const checkApiKey = async () => {
-    try {
-      if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
+  // --- 检查环境与密钥状态 ---
+  const checkEnvironment = async () => {
+    const isEnv = !!(window.aistudio && typeof window.aistudio.openSelectKey === 'function');
+    setIsAiStudioEnv(isEnv);
+    
+    if (isEnv && window.aistudio) {
+      try {
         const hasKey = await window.aistudio.hasSelectedApiKey();
         setHasPaidKey(hasKey);
+      } catch (e) {
+        console.warn("Failed to check API key status");
       }
-    } catch (e) {
-      console.warn("API Key check not available in current environment");
     }
   };
 
   const handleSelectKey = async () => {
-    if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+    if (isAiStudioEnv && window.aistudio) {
       try {
         setIsKeyActionLoading(true);
         await window.aistudio.openSelectKey();
-        // 按照规范：触发 openSelectKey 后应假设用户已尝试选择，直接进入后续逻辑
         setHasPaidKey(true);
-        alert("请在弹出的对话框中选择您的付费项目密钥。选择完成后，分析成功率将大幅提升。");
+        alert("请在弹出的官方对话框中选择您的付费项目密钥。");
       } catch (err) {
         console.error("Failed to open key selector", err);
       } finally {
         setIsKeyActionLoading(false);
       }
-    } else {
-      alert("当前环境不支持在线选择 API 密钥。请确保您在 AI Studio 预览环境中运行。");
     }
   };
 
@@ -110,7 +106,10 @@ const App: React.FC = () => {
 
   useEffect(() => {
     fetchWords();
-    checkApiKey();
+    checkEnvironment();
+    // 轮询检查一次，防止 aistudio 对象注入延迟
+    const timer = setTimeout(checkEnvironment, 1000);
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -120,11 +119,7 @@ const App: React.FC = () => {
   }, [words, isLoading]);
 
   const handleAddWord = (entry: WordEntry) => {
-    const newEntry = {
-      ...entry,
-      testStatus: TestStatus.UNTESTED,
-      passedAfterRetries: false
-    };
+    const newEntry = { ...entry, testStatus: TestStatus.UNTESTED, passedAfterRetries: false };
     setWords(prev => [newEntry, ...prev]);
     addWordToBackend(newEntry);
   };
@@ -220,29 +215,56 @@ const App: React.FC = () => {
                 <h3 className="font-bold text-gray-700 mb-3 flex items-center">
                   <Key className="w-4 h-4 mr-2" /> AI 接口状态
                 </h3>
-                <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600">当前密钥状态:</span>
-                    {hasPaidKey ? (
-                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold flex items-center">
-                        <CheckCircle className="w-3 h-3 mr-1" /> 已接入付费项目
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm text-gray-600">运行环境:</span>
+                    {isAiStudioEnv ? (
+                      <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold flex items-center">
+                        <CheckCircle className="w-3 h-3 mr-1" /> AI Studio 预览
                       </span>
                     ) : (
-                      <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold flex items-center">
-                        <AlertCircle className="w-3 h-3 mr-1" /> 免费版 (有限制)
+                      <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-bold flex items-center">
+                        <Globe className="w-3 h-3 mr-1" /> 独立域名部署
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-gray-400 mb-3 leading-relaxed">遇到“服务器忙”通常是由于频率限制。切换到付费 GCP 项目的 Key 后，分析速度和并发量将显著提升。</p>
-                  <button 
-                    onClick={handleSelectKey}
-                    disabled={isKeyActionLoading}
-                    className="w-full py-2 bg-white border border-gray-200 rounded-md text-sm font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    {isKeyActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4 text-primary" />}
-                    更换/选择付费密钥
-                  </button>
-                  <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-[10px] text-primary hover:underline mt-2 block text-center">了解计费与放宽限制说明</a>
+
+                  {isAiStudioEnv ? (
+                    <>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm text-gray-600">密钥状态:</span>
+                        {hasPaidKey ? (
+                          <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold flex items-center">已接入付费项目</span>
+                        ) : (
+                          <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold flex items-center">免费/限制模式</span>
+                        )}
+                      </div>
+                      <button 
+                        onClick={handleSelectKey}
+                        disabled={isKeyActionLoading}
+                        className="w-full py-2 bg-white border border-gray-200 rounded-lg text-sm font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        {isKeyActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4 text-primary" />}
+                        切换付费密钥
+                      </button>
+                    </>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="p-3 bg-white border border-gray-200 rounded-lg">
+                        <p className="text-[11px] text-gray-500 leading-relaxed mb-2 flex items-start">
+                          <Info className="w-3 h-3 mr-1.5 mt-0.5 shrink-0 text-primary" />
+                          当前在独立域名运行，无法直接弹出密钥选择器。
+                        </p>
+                        <p className="text-[11px] text-gray-700 font-medium">若需提升分析成功率：</p>
+                        <ol className="text-[10px] text-gray-500 list-decimal pl-4 mt-1 space-y-1">
+                          <li>前往您的 Vercel/托管平台设置页</li>
+                          <li>在 <code className="bg-gray-100 px-1">Environment Variables</code> 中添加 <code className="bg-gray-100 px-1 text-primary">API_KEY</code></li>
+                          <li>填入您的付费项目密钥并重新部署</li>
+                        </ol>
+                      </div>
+                    </div>
+                  )}
+                  <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-[10px] text-primary hover:underline mt-3 block text-center">查看 Google API 计费说明</a>
                 </div>
               </div>
 
@@ -251,11 +273,11 @@ const App: React.FC = () => {
                   <Database className="w-4 h-4 mr-2" /> 数据管理
                 </h3>
                 <div className="flex flex-wrap gap-2">
-                  <button onClick={handleExport} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded text-sm hover:bg-gray-50 text-gray-700 font-bold"><Download className="w-4 h-4" /> 备份</button>
-                  <button onClick={() => fileInputRef.current?.click()} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded text-sm hover:bg-gray-50 text-gray-700 font-bold"><Upload className="w-4 h-4" /> 导入</button>
+                  <button onClick={handleExport} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded text-sm hover:bg-gray-50 text-gray-700 font-bold"><Download className="w-4 h-4" /> 导出备份</button>
+                  <button onClick={() => fileInputRef.current?.click()} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded text-sm hover:bg-gray-50 text-gray-700 font-bold"><Upload className="w-4 h-4" /> 导入数据</button>
                   <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleImport} />
                 </div>
-                <button onClick={() => { if(confirm("清空前请确认已备份！")) { setWords([]); localStorage.removeItem('yuwen_words'); }}} className="w-full mt-2 flex items-center justify-center gap-2 px-3 py-2 bg-red-50 border border-red-100 rounded text-sm hover:bg-red-100 text-red-600 font-bold transition-colors"><Trash2 className="w-4 h-4" /> 清空本地题库</button>
+                <button onClick={() => { if(confirm("清空前请确认已备份！操作不可撤销。")) { setWords([]); localStorage.removeItem('yuwen_words'); }}} className="w-full mt-2 flex items-center justify-center gap-2 px-3 py-2 bg-red-50 border border-red-100 rounded text-sm hover:bg-red-100 text-red-600 font-bold transition-colors"><Trash2 className="w-4 h-4" /> 清空题库</button>
               </div>
             </div>
           </div>
