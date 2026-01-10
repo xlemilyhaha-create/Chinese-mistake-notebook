@@ -52,21 +52,24 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
   const performAnalysis = async (wordsToAnalyze: string[]) => {
     if (wordsToAnalyze.length === 0) return;
     setIsProcessing(true);
-    const CHUNK_SIZE = 3;
+    
+    // 减小组大小到 2，降低频率压力
+    const CHUNK_SIZE = 2;
     const wordChunks = [];
     for (let i = 0; i < wordsToAnalyze.length; i += CHUNK_SIZE) {
       wordChunks.push(wordsToAnalyze.slice(i, i + CHUNK_SIZE));
     }
+    
     let processedCount = 0;
     for (const chunk of wordChunks) {
       setDrafts(prev => prev.map(d => chunk.includes(d.word) && d.status !== 'done' ? { ...d, status: 'analyzing', errorMsg: undefined } : d));
-      setProcessingStatus(`分析中... (${processedCount}/${wordsToAnalyze.length})`);
+      setProcessingStatus(`正在深度分析... (${processedCount}/${wordsToAnalyze.length})`);
+      
       try {
         const batchResults = await analyzeWordsBatch(chunk);
         setDrafts(prev => prev.map(d => {
           if (!chunk.includes(d.word)) return d;
           
-          // 模糊匹配：忽略空格和大小写
           const findMatch = (target: string) => {
              const clean = (s: string) => s.replace(/\s+/g, '').toLowerCase();
              return batchResults.find(r => clean(r.word) === clean(target));
@@ -79,16 +82,20 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
             if (!result.definitionMatchData) types = types.filter(t => t !== QuestionType.DEFINITION_MATCH);
             return { ...d, analysis: result, enabledTypes: types, status: 'done' };
           } else {
-            return { ...d, status: 'error', errorMsg: 'AI未返回结果' };
+            return { ...d, status: 'error', errorMsg: 'AI未返回该词结果' };
           }
         }));
       } catch (e: any) {
-        const errorMsg = e.message?.includes('429') ? '服务器繁忙' : '分析超时';
+        const isRateLimit = e.message?.includes('429') || e.message?.toLowerCase().includes('too many requests');
+        const errorMsg = isRateLimit ? 'AI正忙(请稍后重试)' : '网络超时';
         setDrafts(prev => prev.map(d => chunk.includes(d.word) && d.status === 'analyzing' ? { ...d, status: 'error', errorMsg } : d));
       }
+      
       processedCount += chunk.length;
       if (processedCount < wordsToAnalyze.length) {
-        await delay(3000);
+        setProcessingStatus(`正在排队等待 AI... (${processedCount}/${wordsToAnalyze.length})`);
+        // 增加批次间的冷却时间到 6 秒，免费版 API 需要较长冷却
+        await delay(6000);
       }
     }
     setProcessingStatus('');
@@ -115,6 +122,9 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     const failedWords = drafts.filter(d => d.status === 'error').map(d => d.word);
     if (failedWords.length === 0) return;
     setDrafts(prev => prev.map(d => d.status === 'error' ? { ...d, status: 'pending', errorMsg: undefined } : d));
+    // 重试前强制等待 5 秒，确保 API 已经过冷却
+    setProcessingStatus('正在准备重试...');
+    await delay(5000);
     await performAnalysis(failedWords);
   };
 
@@ -135,8 +145,8 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
          }]);
          setPoemInput('');
        }
-    } catch (err) {
-      setProcessingStatus('分析出错');
+    } catch (err: any) {
+      setProcessingStatus(err.message?.includes('429') ? 'AI正忙' : '分析出错');
     } finally {
       setIsProcessing(false);
       setProcessingStatus('');
