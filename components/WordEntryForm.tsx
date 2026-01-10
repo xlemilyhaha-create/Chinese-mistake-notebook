@@ -49,56 +49,55 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
 
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+  // 核心优化：严格串行处理
   const performAnalysis = async (wordsToAnalyze: string[]) => {
     if (wordsToAnalyze.length === 0) return;
     setIsProcessing(true);
     
-    // 减小组大小到 2，降低频率压力
-    const CHUNK_SIZE = 2;
-    const wordChunks = [];
-    for (let i = 0; i < wordsToAnalyze.length; i += CHUNK_SIZE) {
-      wordChunks.push(wordsToAnalyze.slice(i, i + CHUNK_SIZE));
-    }
-    
     let processedCount = 0;
-    for (const chunk of wordChunks) {
-      setDrafts(prev => prev.map(d => chunk.includes(d.word) && d.status !== 'done' ? { ...d, status: 'analyzing', errorMsg: undefined } : d));
-      setProcessingStatus(`正在深度分析... (${processedCount}/${wordsToAnalyze.length})`);
+    
+    // 遍历每一个词，不再分批，而是逐个发送请求，以保证 429 报错后可以精确定位到是哪个词
+    for (const word of wordsToAnalyze) {
+      setDrafts(prev => prev.map(d => d.word === word && d.status !== 'done' ? { ...d, status: 'analyzing', errorMsg: undefined } : d));
+      setProcessingStatus(`正在深度分析: ${word} (${processedCount + 1}/${wordsToAnalyze.length})`);
       
       try {
-        const batchResults = await analyzeWordsBatch(chunk);
-        setDrafts(prev => prev.map(d => {
-          if (!chunk.includes(d.word)) return d;
-          
-          const findMatch = (target: string) => {
-             const clean = (s: string) => s.replace(/\s+/g, '').toLowerCase();
-             return batchResults.find(r => clean(r.word) === clean(target));
-          };
+        // 单个词发送
+        const batchResults = await analyzeWordsBatch([word]);
+        const result = batchResults[0];
 
-          const result = findMatch(d.word);
-          if (result) {
+        if (result) {
+          setDrafts(prev => prev.map(d => {
+            if (d.word !== word) return d;
             let types = [...d.enabledTypes];
             if (!result.definitionData) types = types.filter(t => t !== QuestionType.DEFINITION);
             if (!result.definitionMatchData) types = types.filter(t => t !== QuestionType.DEFINITION_MATCH);
             return { ...d, analysis: result, enabledTypes: types, status: 'done' };
-          } else {
-            return { ...d, status: 'error', errorMsg: 'AI未返回该词结果' };
-          }
-        }));
+          }));
+        } else {
+          setDrafts(prev => prev.map(d => d.word === word ? { ...d, status: 'error', errorMsg: 'AI解析超时' } : d));
+        }
       } catch (e: any) {
         const isRateLimit = e.message?.includes('429') || e.message?.toLowerCase().includes('too many requests');
-        const errorMsg = isRateLimit ? 'AI正忙(请稍后重试)' : '网络超时';
-        setDrafts(prev => prev.map(d => chunk.includes(d.word) && d.status === 'analyzing' ? { ...d, status: 'error', errorMsg } : d));
+        const errorMsg = isRateLimit ? '服务器忙(请稍后重试)' : '接口异常';
+        setDrafts(prev => prev.map(d => d.word === word ? { ...d, status: 'error', errorMsg } : d));
+        
+        // 如果遇到 429，立即中断后续请求，防止被永久封禁
+        if (isRateLimit) {
+           setProcessingStatus(`触发频率限制，已停止后续请求`);
+           break;
+        }
       }
       
-      processedCount += chunk.length;
+      processedCount++;
       if (processedCount < wordsToAnalyze.length) {
-        setProcessingStatus(`正在排队等待 AI... (${processedCount}/${wordsToAnalyze.length})`);
-        // 增加批次间的冷却时间到 6 秒，免费版 API 需要较长冷却
-        await delay(6000);
+        // 增加词与词之间的冷却时间
+        setProcessingStatus(`AI 正在休息... (${processedCount}/${wordsToAnalyze.length})`);
+        await delay(5000); 
       }
     }
-    setProcessingStatus('');
+    
+    setProcessingStatus(processedCount === wordsToAnalyze.length ? '全部分析完成' : '分析已中止');
     setIsProcessing(false);
   };
 
@@ -119,12 +118,12 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
   };
 
   const handleRetryFailed = async () => {
-    const failedWords = drafts.filter(d => d.status === 'error').map(d => d.word);
-    if (failedWords.length === 0) return;
+    const failedItems = drafts.filter(d => d.status === 'error');
+    if (failedItems.length === 0) return;
+    const failedWords = failedItems.map(d => d.word);
     setDrafts(prev => prev.map(d => d.status === 'error' ? { ...d, status: 'pending', errorMsg: undefined } : d));
-    // 重试前强制等待 5 秒，确保 API 已经过冷却
-    setProcessingStatus('正在准备重试...');
-    await delay(5000);
+    setProcessingStatus('正在重试...');
+    await delay(2000);
     await performAnalysis(failedWords);
   };
 
@@ -230,7 +229,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
             <textarea
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder="输入字词，或录入近义词组如 '改善 vs 改变'。"
+              placeholder="输入字词，或录入对：'改变 vs 改善'"
               className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary outline-none min-h-[100px] resize-y"
             />
             <div className="absolute bottom-3 right-3 flex gap-2">
@@ -239,7 +238,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-4 mb-4">
-            <span className="text-sm text-gray-600 font-medium">默认考点:</span>
+            <span className="text-sm text-gray-600 font-medium">考点:</span>
             {[QuestionType.PINYIN, QuestionType.DICTATION, QuestionType.DEFINITION, QuestionType.DEFINITION_MATCH].map(t => (
                <label key={t} className="flex items-center space-x-2 cursor-pointer select-none">
                  <input type="checkbox" checked={defaultTypes.includes(t)} onChange={() => setDefaultTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])} className="w-4 h-4 text-primary rounded border-gray-300" />
@@ -267,17 +266,17 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
       {drafts.length > 0 && (
         <div className="mt-8 border-t border-gray-100 pt-6">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-md font-bold text-gray-800">识别结果 ({finishedItemsCount}/{drafts.length})</h3>
+            <h3 className="text-md font-bold text-gray-800">识别进度 ({finishedItemsCount}/{drafts.length})</h3>
             <div className="flex gap-2">
               {hasFailedItems && (
-                <button onClick={handleRetryFailed} disabled={isProcessing} className="bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-200 px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center disabled:opacity-50"><RefreshCw className={`w-4 h-4 mr-2 ${isProcessing ? 'animate-spin' : ''}`} /> 重试失败项</button>
+                <button onClick={handleRetryFailed} disabled={isProcessing} className="bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-200 px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center disabled:opacity-50"><RefreshCw className={`w-4 h-4 mr-2 ${isProcessing ? 'animate-spin' : ''}`} /> 尝试重测失败项</button>
               )}
-              <button onClick={handleSaveAll} disabled={isProcessing || finishedItemsCount === 0} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center shadow-sm disabled:opacity-50"><CheckCircle className="w-4 h-4 mr-2" /> 确认添加全部</button>
+              <button onClick={handleSaveAll} disabled={isProcessing || finishedItemsCount === 0} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center shadow-sm disabled:opacity-50"><CheckCircle className="w-4 h-4 mr-2" /> 确认入库</button>
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-2">
             {drafts.map((draft) => (
-              <div key={draft.id} className={`rounded-lg p-4 border relative group transition-all duration-300 ${draft.status === 'error' ? 'bg-red-50 border-red-200' : draft.status === 'analyzing' ? 'bg-indigo-50 border-indigo-200 shadow-inner' : 'bg-gray-50 border-gray-200'}`}>
+              <div key={draft.id} className={`rounded-lg p-4 border relative group transition-all duration-300 ${draft.status === 'error' ? 'bg-red-50 border-red-200' : draft.status === 'analyzing' ? 'bg-indigo-50 border-indigo-200 shadow-md' : 'bg-gray-50 border-gray-200'}`}>
                 <button onClick={() => setDrafts(prev => prev.filter(d => d.id !== draft.id))} className="absolute top-2 right-2 text-gray-400 hover:text-red-500 transition-colors"><X className="w-4 h-4" /></button>
                 <div className="flex flex-col gap-1">
                   <h4 className="font-bold text-gray-900 flex items-center gap-2">
@@ -304,9 +303,9 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
                     ) : (
                       <div className="flex flex-col gap-1 w-full">
                         <span className="text-xs flex items-center text-gray-500 font-medium">
-                          {draft.status === 'analyzing' && <><Loader2 className="w-3 h-3 mr-1.5 animate-spin text-primary" /> 深度分析中...</>}
-                          {draft.status === 'pending' && <span className="text-gray-400">队列等待中</span>}
-                          {draft.status === 'error' && <><AlertCircle className="w-3 h-3 mr-1.5 text-red-500" /> 分析失败</>}
+                          {draft.status === 'analyzing' && <><Loader2 className="w-3 h-3 mr-1.5 animate-spin text-primary" /> 正在深度学习词义...</>}
+                          {draft.status === 'pending' && <span className="text-gray-400">队列排队中</span>}
+                          {draft.status === 'error' && <><AlertCircle className="w-3 h-3 mr-1.5 text-red-500" /> 分析中断</>}
                         </span>
                         {draft.errorMsg && <span className="text-[10px] text-red-500 bg-red-100/50 px-2 py-0.5 rounded flex items-center"><Info className="w-2.5 h-2.5 mr-1" /> {draft.errorMsg}</span>}
                       </div>

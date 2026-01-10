@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { BookOpen, FileText, Settings, Database, Download, Upload, Trash2, AlertCircle, Save, Loader2 } from 'lucide-react';
+import { BookOpen, FileText, Settings, Database, Download, Upload, Trash2, Key, Save, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import WordEntryForm from './components/WordEntryForm';
 import WordList from './components/WordList';
 import ExamGenerator from './components/ExamGenerator';
@@ -11,15 +10,48 @@ enum View {
   EXAM = 'EXAM',
 }
 
+// Fix: Augment existing global AIStudio interface and properly type window.aistudio to resolve identical modifier and type mismatch errors
+declare global {
+  interface AIStudio {
+    hasSelectedApiKey: () => Promise<boolean>;
+    openSelectKey: () => Promise<void>;
+  }
+  interface Window {
+    aistudio: AIStudio;
+  }
+}
+
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>(View.HOME);
   const [words, setWords] = useState<WordEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [hasPaidKey, setHasPaidKey] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- API Functions ---
   
+  const checkApiKey = async () => {
+    try {
+      if (window.aistudio) {
+        const hasKey = await window.aistudio.hasSelectedApiKey();
+        setHasPaidKey(hasKey);
+      }
+    } catch (e) {
+      console.warn("API Key check not available");
+    }
+  };
+
+  const handleSelectKey = async () => {
+    if (window.aistudio) {
+      await window.aistudio.openSelectKey();
+      // Assume the key selection was successful after triggering openSelectKey() as per instructions to mitigate race conditions
+      setHasPaidKey(true);
+      setShowSettings(false);
+      alert("API 密钥已更新，分析频率限制已放宽。");
+    }
+  };
+
   const fetchWords = async () => {
     try {
       setIsLoading(true);
@@ -28,12 +60,8 @@ const App: React.FC = () => {
         const data = await res.json();
         setWords(data);
       } else {
-        // Fallback to local storage if API fails (e.g., in development without MySQL)
-        console.warn("API failed, checking local storage...");
         const saved = localStorage.getItem('yuwen_words');
-        if (saved) {
-           setWords(JSON.parse(saved));
-        }
+        if (saved) setWords(JSON.parse(saved));
       }
     } catch (e) {
       console.error("Fetch error", e);
@@ -68,21 +96,18 @@ const App: React.FC = () => {
     } catch (e) { console.error("Delete error", e); }
   };
 
-
   useEffect(() => {
     fetchWords();
+    checkApiKey();
   }, []);
 
-  // Sync to LocalStorage as a backup (Optional, but good for hybrid approach)
   useEffect(() => {
     if (!isLoading && words.length > 0) {
       localStorage.setItem('yuwen_words', JSON.stringify(words));
     }
   }, [words, isLoading]);
 
-
   const handleAddWord = (entry: WordEntry) => {
-    // Add default status values
     const newEntry = {
       ...entry,
       testStatus: TestStatus.UNTESTED,
@@ -98,13 +123,6 @@ const App: React.FC = () => {
   };
 
   const handleUpdateWord = (id: string, updates: Partial<WordEntry>) => {
-    // Calculate new logic if status is changing
-    // Logic handles transitions:
-    // Untested -> Passed (Easy)
-    // Failed -> Passed (Hard)
-    // The component might calculate this, but we can double check here or just trust the component's intent.
-    // WordList component handles the logic for 'passedAfterRetries' before calling this.
-    
     setWords(prev => prev.map(w => w.id === id ? { ...w, ...updates } : w));
     updateWordInBackend(id, updates);
   };
@@ -124,7 +142,6 @@ const App: React.FC = () => {
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
@@ -140,47 +157,19 @@ const App: React.FC = () => {
                 testStatus: w.testStatus || TestStatus.UNTESTED,
                 passedAfterRetries: w.passedAfterRetries || false
               }));
-            
-            // Optimistic update
             setWords(prev => [...newWords, ...prev]);
-            
-            // Bulk insert to backend (sequentially to avoid race conditions/overload)
-            for (const w of newWords) {
-              await addWordToBackend(w);
-            }
-            
+            for (const w of newWords) await addWordToBackend(w);
             alert(`成功导入 ${newWords.length} 个新词语！`);
           }
-        } else {
-          alert("文件格式不正确");
-        }
-      } catch (err) {
-        alert("无法解析文件，请确保是正确的备份文件");
-      }
+        } else alert("文件格式不正确");
+      } catch (err) { alert("无法解析文件"); }
     };
     reader.readAsText(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleClearAll = async () => {
-    if (confirm("确定要清空所有数据吗？此操作无法撤销！建议先导出备份。")) {
-      // In a real app we would call a 'clear' endpoint, here we delete one by one or just wipe local
-      // Since MySQL truncate is dangerous, we just loop delete from state and UI
-      // But for bulk, we should probably have an endpoint. For now, just clear local state.
-      // Implementing bulk delete is out of scope for this snippet, assuming manual clear.
-      alert("请注意：后台数据暂不支持一键清空，请手动删除或联系管理员重置数据库。本地视图已清空。");
-      setWords([]);
-      localStorage.removeItem('yuwen_words');
-    }
-  };
-
   if (currentView === View.EXAM) {
-    return (
-      <ExamGenerator 
-        words={words} 
-        onBack={() => setCurrentView(View.HOME)} 
-      />
-    );
+    return <ExamGenerator words={words} onBack={() => setCurrentView(View.HOME)} />;
   }
 
   return (
@@ -197,7 +186,6 @@ const App: React.FC = () => {
              <button
               onClick={() => setShowSettings(!showSettings)}
               className={`p-2 rounded-lg transition-colors ${showSettings ? 'bg-gray-100 text-gray-900' : 'text-gray-500 hover:bg-gray-50'}`}
-              title="设置"
              >
                <Settings className="w-5 h-5" />
              </button>
@@ -215,70 +203,67 @@ const App: React.FC = () => {
 
         {showSettings && (
           <div className="bg-white border-b border-gray-200 shadow-sm animate-in slide-in-from-top-2 duration-200 p-4">
-            <div className="max-w-5xl mx-auto space-y-6">
-              
-              {/* Data Management Only */}
+            <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8">
               <div>
                 <h3 className="font-bold text-gray-700 mb-3 flex items-center">
-                  <Database className="w-4 h-4 mr-2" /> 数据管理 (MySQL)
+                  <Key className="w-4 h-4 mr-2" /> AI 接口状态
                 </h3>
-                <div className="flex flex-wrap gap-2">
+                <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-gray-600">当前密钥类型:</span>
+                    {hasPaidKey ? (
+                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold flex items-center">
+                        <CheckCircle className="w-3 h-3 mr-1" /> 高级付费 (无限制)
+                      </span>
+                    ) : (
+                      <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold flex items-center">
+                        <AlertCircle className="w-3 h-3 mr-1" /> 免费预览 (有限制)
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-gray-400 mb-3">如果您遇到“服务器忙”报错，建议选择一个开了账单的 GCP 项目密钥。</p>
                   <button 
-                    onClick={handleExport}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded text-sm hover:bg-gray-50 text-gray-700"
+                    onClick={handleSelectKey}
+                    className="w-full py-2 bg-white border border-gray-200 rounded-md text-sm font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm flex items-center justify-center gap-2"
                   >
-                    <Download className="w-4 h-4" /> 备份数据
+                    <Key className="w-4 h-4 text-primary" /> 更换/选择付费密钥
                   </button>
-                  <button 
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded text-sm hover:bg-gray-50 text-gray-700"
-                  >
-                    <Upload className="w-4 h-4" /> 导入/恢复
-                  </button>
-                  <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleImport} />
-                  <button 
-                    onClick={handleClearAll}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded text-sm hover:bg-red-100 text-red-600 ml-2"
-                  >
-                    <Trash2 className="w-4 h-4" /> 清空题库
-                  </button>
+                  <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-[10px] text-primary hover:underline mt-2 block text-center">了解计费说明</a>
                 </div>
               </div>
 
+              <div>
+                <h3 className="font-bold text-gray-700 mb-3 flex items-center">
+                  <Database className="w-4 h-4 mr-2" /> 数据管理
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={handleExport} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded text-sm hover:bg-gray-50 text-gray-700 font-bold"><Download className="w-4 h-4" /> 备份</button>
+                  <button onClick={() => fileInputRef.current?.click()} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded text-sm hover:bg-gray-50 text-gray-700 font-bold"><Upload className="w-4 h-4" /> 导入</button>
+                  <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleImport} />
+                </div>
+                <button onClick={() => { if(confirm("清空前请确认已备份！")) { setWords([]); localStorage.removeItem('yuwen_words'); }}} className="w-full mt-2 flex items-center justify-center gap-2 px-3 py-2 bg-red-50 border border-red-100 rounded text-sm hover:bg-red-100 text-red-600 font-bold transition-colors"><Trash2 className="w-4 h-4" /> 清空本地题库</button>
+              </div>
             </div>
           </div>
         )}
       </header>
 
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-8">
-        <section>
-          <WordEntryForm onAddWord={handleAddWord} />
-        </section>
-
+        <section><WordEntryForm onAddWord={handleAddWord} /></section>
         <section className="mt-8">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-gray-800 flex items-center">
-              <Database className="w-5 h-5 mr-2 text-gray-500" />
-              题库列表
-            </h2>
+            <h2 className="text-lg font-bold text-gray-800 flex items-center"><Database className="w-5 h-5 mr-2 text-gray-500" /> 题库列表</h2>
             <div className="flex items-center gap-2">
                {isLoading && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
-               <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
-                 共 {words.length} 个词
-               </span>
+               <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded-md">共 {words.length} 个词</span>
             </div>
           </div>
-          <WordList 
-            words={words} 
-            onDelete={handleDeleteWord} 
-            onUpdate={handleUpdateWord}
-          />
+          <WordList words={words} onDelete={handleDeleteWord} onUpdate={handleUpdateWord} />
         </section>
-
       </main>
       
       <footer className="bg-white border-t border-gray-200 py-6 text-center text-sm text-gray-400 mt-auto">
-        <p>© 2025 语文错题助手 - Build Your Vocabulary</p>
+        <p>© 2025 语文错题助手 - 智能学习伴侣</p>
       </footer>
     </div>
   );
