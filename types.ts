@@ -20,28 +20,41 @@ export enum TestStatus {
 }
 
 export interface DefinitionQuestionData {
-  targetChar: string; // The specific character being tested (e.g., "益" in "精益求精")
+  targetChar: string; // The specific character being tested
   options: string[]; // 4 options (Definitions)
   correctIndex: number; // 0-3
 }
 
+export enum MatchMode {
+  SAME_AS_TARGET = 'SAME_AS_TARGET', // 模式2：在词群中找意思相同的字 (如图一)
+  SYNONYM_CHOICE = 'SYNONYM_CHOICE', // 模式1：近义词填空 (选词填空)
+  TWO_WAY_COMPARE = 'TWO_WAY_COMPARE' // 模式3：两个词中的字义判断 (如图二)
+}
+
 export interface DefinitionMatchData {
-  targetChar: string; // e.g. "益"
-  options: string[]; // 4 words containing "益", e.g. ["延年益寿", "良师益友", "多得益善", "老当益壮"]
-  correctIndex: number; // Index of the word where "益" has the SAME meaning as in the source word
+  mode: MatchMode;
+  targetChar: string; 
+  // SAME_AS_TARGET & SYNONYM_CHOICE use these:
+  context?: string; // 语境，如 "日益紧密"
+  options?: string[]; // 4个选项
+  correctIndex?: number;
+  // TWO_WAY_COMPARE uses these:
+  compareWordA?: string; // 如 "题西林壁"
+  compareWordB?: string; // 如 "小题大做"
+  isSame?: boolean; // 意思是否相同
 }
 
 export interface PoemData {
   title: string;
   dynasty: string;
   author: string;
-  content: string; // Full text
-  lines: string[]; // Split by punctuation
+  content: string; 
+  lines: string[]; 
   fillAnswers: {
     lineIndex: number;
-    answer: string; // The part to be filled
-    pre: string; // Context before
-    post: string; // Context after
+    answer: string; 
+    pre: string; 
+    post: string; 
   }[];
   definitionQuestions: {
     lineIndex: number;
@@ -54,33 +67,20 @@ export interface PoemData {
 export interface WordEntry {
   id: string;
   type: EntryType;
-  word: string; // For Poem, this can be the Title
-  pinyin: string; // For Poem, can be empty or author pinyin
+  word: string; 
+  pinyin: string; 
   createdAt: number;
-  
-  // Word specific
   definitionData?: DefinitionQuestionData;
-  definitionMatchData?: DefinitionMatchData; // NEW: For "Same meaning" questions
-  
-  // Poem specific
+  definitionMatchData?: DefinitionMatchData; 
   poemData?: PoemData;
-  
-  // User preferences
   enabledTypes: QuestionType[]; 
-  
-  // Review Status
   testStatus: TestStatus;
   passedAfterRetries: boolean;
 }
 
-export interface FilterOptions {
-  startDate: number | null;
-  endDate: number | null;
-}
-
 export interface AnalysisResult {
   type: EntryType;
-  word: string; // or Poem Title
+  word: string;
   pinyin: string;
   definitionData: DefinitionQuestionData | null;
   definitionMatchData: DefinitionMatchData | null;

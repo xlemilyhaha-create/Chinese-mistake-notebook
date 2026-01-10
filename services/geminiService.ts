@@ -1,5 +1,5 @@
 
-import { AnalysisResult, EntryType } from "../types";
+import { AnalysisResult, EntryType, MatchMode } from "../types";
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -17,9 +17,8 @@ const analyzeWithGeminiBackend = async (payload: any, retries = 3) => {
     
     clearTimeout(timeoutId);
 
-    // 针对 429 频率限制进行更长的指数退避重试
     if (response.status === 429 && retries > 0) {
-      const waitTime = (4 - retries) * 5000; // 第一次失败等5秒，第二次等10秒...
+      const waitTime = (4 - retries) * 5000; 
       console.warn(`Rate limited, retrying in ${waitTime/1000}s...`);
       await delay(waitTime);
       return analyzeWithGeminiBackend(payload, retries - 1);
@@ -94,6 +93,20 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
 };
 
 function mapDataToResult(data: any): AnalysisResult {
+  let matchData = null;
+  if (data.hasMatchQuestion) {
+    matchData = {
+      mode: data.matchMode as MatchMode || MatchMode.SAME_AS_TARGET,
+      targetChar: data.targetChar || data.word?.[0] || '?',
+      context: data.matchContext,
+      options: data.matchOptions,
+      correctIndex: data.matchCorrectIndex,
+      compareWordA: data.compareWordA,
+      compareWordB: data.compareWordB,
+      isSame: data.isSame
+    };
+  }
+
   return {
     type: EntryType.WORD,
     word: data.word,
@@ -103,10 +116,6 @@ function mapDataToResult(data: any): AnalysisResult {
       options: data.options,
       correctIndex: typeof data.correctIndex === 'number' ? data.correctIndex : 0,
     } : null,
-    definitionMatchData: data.hasMatchQuestion && data.matchOptions && data.matchOptions.length === 4 ? {
-      targetChar: data.targetChar || data.word?.[0] || '?',
-      options: data.matchOptions,
-      correctIndex: typeof data.matchCorrectIndex === 'number' ? data.matchCorrectIndex : 0,
-    } : null
+    definitionMatchData: matchData
   };
 }

@@ -3,7 +3,6 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 const apiKey = process.env.API_KEY;
 
-// 定义单个词语分析的属性
 const itemSchemaProperties = {
   word: { type: Type.STRING },
   pinyin: { type: Type.STRING },
@@ -11,12 +10,17 @@ const itemSchemaProperties = {
   targetChar: { type: Type.STRING, nullable: true },
   options: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true },
   correctIndex: { type: Type.INTEGER, nullable: true },
+  // 辨析题增强
   hasMatchQuestion: { type: Type.BOOLEAN },
+  matchMode: { type: Type.STRING, description: "SAME_AS_TARGET, SYNONYM_CHOICE, or TWO_WAY_COMPARE" },
+  matchContext: { type: Type.STRING, nullable: true },
   matchOptions: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true },
-  matchCorrectIndex: { type: Type.INTEGER, nullable: true }
+  matchCorrectIndex: { type: Type.INTEGER, nullable: true },
+  compareWordA: { type: Type.STRING, nullable: true },
+  compareWordB: { type: Type.STRING, nullable: true },
+  isSame: { type: Type.BOOLEAN, nullable: true }
 };
 
-// 批量分析 Schema (数组)
 const batchAnalysisSchema = {
   type: Type.OBJECT,
   properties: {
@@ -25,7 +29,7 @@ const batchAnalysisSchema = {
       items: {
         type: Type.OBJECT,
         properties: itemSchemaProperties,
-        required: ["word", "pinyin"]
+        required: ["word", "pinyin", "hasMatchQuestion"]
       }
     }
   },
@@ -78,7 +82,6 @@ const ocrSchema = {
 const cleanJson = (text) => {
   if (!text) return '{}';
   let cleaned = text.trim();
-  // Remove markdown code blocks if present
   cleaned = cleaned.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
   const firstBrace = cleaned.indexOf('{');
   const lastBrace = cleaned.lastIndexOf('}');
@@ -102,7 +105,6 @@ export default async function handler(req, res) {
     const ai = new GoogleGenAI({ apiKey });
     const { type, text, words, image } = req.body;
 
-    // Use gemini-3-flash-preview for better reasoning and JSON adherence
     let model = 'gemini-3-flash-preview';
     let parts = [];
     let schema = null;
@@ -111,9 +113,12 @@ export default async function handler(req, res) {
       parts = [{ text: `你是一个资深的语文教育专家。请分析以下词语：${words.join(', ')}。
       要求：
       1. 为每个词提供精准的拼音。
-      2. 提取词中一个重点单字，生成一道释义题（4个选项）。
-      3. 生成一道字义辨析题（在不同语境下该单字意思是否相同）。
-      输出必须是纯净的 JSON 格式。` }];
+      2. 字义题：提取词中重点单字，生成4个不同定义的选项。
+      3. 辨析题（重点）：每个词必须从以下三种模式中【任选一种】最合适的：
+         - 模式A(SAME_AS_TARGET)：给出一个语境词（如"日益紧密"），让学生从4个含该字的词中选出字义相同的词。
+         - 模式B(SYNONYM_CHOICE)：提供一个含有空格的简短句子，给出该词及其一个近义词（如"日益"和"更加"），让学生选出最合适的。
+         - 模式C(TWO_WAY_COMPARE)：给出两个含有相同字的短语（如"题西林壁"和"小题大做"），判断其中该字的意思是否相同。
+      输出必须严格符合提供的 JSON Schema 格式。` }];
       schema = batchAnalysisSchema;
     } else if (type === 'poem') {
       parts = [{ text: `分析古诗 "${text}"。输出 JSON 包含标题、作者、全文、填空题和释义题。` }];
@@ -148,7 +153,6 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error("Backend API Error:", error);
-    // Return specific status codes if possible
     const statusCode = error.message?.includes('429') ? 429 : 500;
     return res.status(statusCode).json({ error: error.message || "Internal Server Error" });
   }

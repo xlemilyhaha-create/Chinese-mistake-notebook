@@ -41,7 +41,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     
     setIsProcessing(true);
     
-    // 极致减小分块：3个一组，降低单个响应体积和超时风险
+    // 保持 3 个一组，这是最稳健的体积
     const CHUNK_SIZE = 3;
     const wordChunks = [];
     for (let i = 0; i < wordsToAnalyze.length; i += CHUNK_SIZE) {
@@ -51,36 +51,42 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     let processedCount = 0;
 
     for (const chunk of wordChunks) {
+      // 1. 设置当前批次为分析中
       setDrafts(prev => prev.map(d => chunk.includes(d.word) && d.status !== 'done' ? { ...d, status: 'analyzing', errorMsg: undefined } : d));
-      setProcessingStatus(`正在深度分析... (${processedCount}/${wordsToAnalyze.length})`);
+      setProcessingStatus(`分析中... (${processedCount}/${wordsToAnalyze.length})`);
 
       try {
         const batchResults = await analyzeWordsBatch(chunk);
         
+        // 2. 更新结果，并处理“AI漏选”的情况
         setDrafts(prev => prev.map(d => {
-          const result = batchResults.find(r => r.word === d.word);
-          if (!result) return d;
+          if (!chunk.includes(d.word)) return d; // 非本批次，不动
           
-          let types = [...d.enabledTypes];
-          if (types.includes(QuestionType.DEFINITION) && !result.definitionData) {
-            types = types.filter(t => t !== QuestionType.DEFINITION);
+          const result = batchResults.find(r => r.word === d.word);
+          
+          if (result) {
+            let types = [...d.enabledTypes];
+            if (types.includes(QuestionType.DEFINITION) && !result.definitionData) {
+              types = types.filter(t => t !== QuestionType.DEFINITION);
+            }
+            if (types.includes(QuestionType.DEFINITION_MATCH) && !result.definitionMatchData) {
+              types = types.filter(t => t !== QuestionType.DEFINITION_MATCH);
+            }
+            return { ...d, analysis: result, enabledTypes: types, status: 'done' };
+          } else {
+            // AI 没返回这个词的结果，标记为错误而非一直处于 analyzing
+            return { ...d, status: 'error', errorMsg: 'AI未返回结果，请重试' };
           }
-          if (types.includes(QuestionType.DEFINITION_MATCH) && !result.definitionMatchData) {
-            types = types.filter(t => t !== QuestionType.DEFINITION_MATCH);
-          }
-
-          return { ...d, analysis: result, enabledTypes: types, status: 'done' };
         }));
       } catch (e: any) {
         console.error("Chunk failed:", chunk, e);
-        const errorMsg = e.message?.includes('429') ? '服务器繁忙 (Rate Limit)' : '分析超时/失败';
+        const errorMsg = e.message?.includes('429') ? '服务器繁忙 (Rate Limit)' : '网络异常或分析超时';
         setDrafts(prev => prev.map(d => chunk.includes(d.word) && d.status === 'analyzing' ? { ...d, status: 'error', errorMsg } : d));
       }
       
       processedCount += chunk.length;
       if (processedCount < wordsToAnalyze.length) {
-        // 关键控制：间隔延长至 4000ms，严格遵守每分钟 15 次请求的免费额度
-        setProcessingStatus(`休息中，避开频率限制... (${processedCount}/${wordsToAnalyze.length})`);
+        setProcessingStatus(`休息中... (${processedCount}/${wordsToAnalyze.length})`);
         await delay(4000);
       }
     }
@@ -198,6 +204,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
   };
 
   const hasFailedItems = drafts.some(d => d.status === 'error');
+  const finishedItemsCount = drafts.filter(d => d.status === 'done').length;
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
@@ -229,23 +236,23 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
             {[QuestionType.PINYIN, QuestionType.DICTATION, QuestionType.DEFINITION, QuestionType.DEFINITION_MATCH].map(t => (
                <label key={t} className="flex items-center space-x-2 cursor-pointer select-none">
                  <input type="checkbox" checked={defaultTypes.includes(t)} onChange={() => setDefaultTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])} className="w-4 h-4 text-primary rounded border-gray-300" />
-                 <span className="text-sm text-gray-700">{{ [QuestionType.PINYIN]: '注音', [QuestionType.DICTATION]: '书写', [QuestionType.DEFINITION]: '释义', [QuestionType.DEFINITION_MATCH]: '辨析' }[t]}</span>
+                 <span className="text-sm text-gray-700 font-medium">{{ [QuestionType.PINYIN]: '注音', [QuestionType.DICTATION]: '书写', [QuestionType.DEFINITION]: '释义', [QuestionType.DEFINITION_MATCH]: '辨析' }[t]}</span>
                </label>
             ))}
           </div>
           <div className="flex justify-between items-center border-t pt-3">
              <div className="text-sm text-gray-500">
-               {processingStatus && <span className="flex items-center text-primary"><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {processingStatus}</span>}
+               {processingStatus && <span className="flex items-center text-primary font-medium"><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {processingStatus}</span>}
              </div>
-             <button onClick={handleAnalyzeWords} disabled={isProcessing || !inputText.trim()} className="bg-primary hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-medium transition-colors disabled:opacity-50">开始分析</button>
+             <button onClick={handleAnalyzeWords} disabled={isProcessing || !inputText.trim()} className="bg-primary hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold transition-all transform active:scale-95 disabled:opacity-50 disabled:scale-100">开始分析</button>
           </div>
         </div>
       ) : (
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
           <textarea value={poemInput} onChange={(e) => setPoemInput(e.target.value)} placeholder="输入诗名或全诗内容。" className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary outline-none min-h-[120px]" />
           <div className="flex justify-between items-center border-t pt-3">
-             <div className="text-sm text-gray-500">{processingStatus && <span className="flex items-center text-primary"><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {processingStatus}</span>}</div>
-             <button onClick={handleAnalyzePoem} disabled={isProcessing || !poemInput.trim()} className="bg-primary hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-medium transition-colors disabled:opacity-50">分析古诗</button>
+             <div className="text-sm text-gray-500">{processingStatus && <span className="flex items-center text-primary font-medium"><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {processingStatus}</span>}</div>
+             <button onClick={handleAnalyzePoem} disabled={isProcessing || !poemInput.trim()} className="bg-primary hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold transition-all transform active:scale-95 disabled:opacity-50">分析古诗</button>
           </div>
         </div>
       )}
@@ -253,20 +260,24 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
       {drafts.length > 0 && (
         <div className="mt-8 border-t border-gray-100 pt-6">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-md font-semibold text-gray-700">识别结果 ({drafts.length})</h3>
+            <h3 className="text-md font-bold text-gray-800">识别结果 ({finishedItemsCount}/{drafts.length})</h3>
             <div className="flex gap-2">
               {hasFailedItems && (
-                <button onClick={handleRetryFailed} disabled={isProcessing} className="bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-200 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center disabled:opacity-50"><RefreshCw className={`w-4 h-4 mr-2 ${isProcessing ? 'animate-spin' : ''}`} /> 重试失败项</button>
+                <button onClick={handleRetryFailed} disabled={isProcessing} className="bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-200 px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center disabled:opacity-50"><RefreshCw className={`w-4 h-4 mr-2 ${isProcessing ? 'animate-spin' : ''}`} /> 重试失败项</button>
               )}
-              <button onClick={handleSaveAll} disabled={isProcessing} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center shadow-sm disabled:opacity-50"><CheckCircle className="w-4 h-4 mr-2" /> 确认添加全部</button>
+              <button onClick={handleSaveAll} disabled={isProcessing || finishedItemsCount === 0} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center shadow-sm disabled:opacity-50"><CheckCircle className="w-4 h-4 mr-2" /> 确认添加全部</button>
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-2">
             {drafts.map((draft) => (
-              <div key={draft.id} className={`rounded-lg p-4 border relative group transition-colors ${draft.status === 'error' ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
-                <button onClick={() => setDrafts(prev => prev.filter(d => d.id !== draft.id))} className="absolute top-2 right-2 text-gray-400 hover:text-red-500"><X className="w-4 h-4" /></button>
+              <div key={draft.id} className={`rounded-lg p-4 border relative group transition-all duration-300 ${draft.status === 'error' ? 'bg-red-50 border-red-200' : draft.status === 'analyzing' ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-gray-200'}`}>
+                <button onClick={() => setDrafts(prev => prev.filter(d => d.id !== draft.id))} className="absolute top-2 right-2 text-gray-400 hover:text-red-500 transition-colors"><X className="w-4 h-4" /></button>
                 <div className="flex flex-col gap-1">
-                  <h4 className="font-bold text-gray-900">{draft.word} <span className="text-primary text-sm font-normal ml-2">{draft.analysis?.pinyin}</span></h4>
+                  <h4 className="font-bold text-gray-900 flex items-center gap-2">
+                    {draft.word} 
+                    {draft.status === 'done' && <span className="text-primary text-sm font-normal">{draft.analysis?.pinyin}</span>}
+                    {draft.status === 'done' && <CheckCircle className="w-4 h-4 text-green-500" />}
+                  </h4>
                   <div className="flex flex-wrap gap-1 mt-2">
                     {draft.status === 'done' ? (
                       <>
@@ -276,23 +287,21 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
                               const type = [QuestionType.PINYIN, QuestionType.DICTATION, QuestionType.DEFINITION, QuestionType.DEFINITION_MATCH][idx];
                               const isAvailable = idx < 2 || (idx === 2 && draft.analysis?.definitionData) || (idx === 3 && draft.analysis?.definitionMatchData);
                               if (!isAvailable) return null;
-                              return <button key={type} onClick={() => toggleEditType(draft.id, type)} className={`px-2 py-0.5 text-[10px] rounded border ${draft.enabledTypes.includes(type) ? 'bg-blue-100 border-blue-200 text-blue-700' : 'bg-white border-gray-200 text-gray-500'}`}>{label}</button>
+                              return <button key={type} onClick={() => toggleEditType(draft.id, type)} className={`px-2 py-0.5 text-[10px] font-bold rounded border transition-colors ${draft.enabledTypes.includes(type) ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}>{label}</button>
                             })}
                           </>
                         ) : (
-                          <>
-                            <span className="text-[10px] text-gray-500">古诗分析完成</span>
-                          </>
+                          <span className="text-[10px] text-gray-500 italic">古诗分析完成</span>
                         )}
                       </>
                     ) : (
-                      <div className="flex flex-col gap-1">
-                        <span className="text-xs flex items-center text-gray-400">
-                          {draft.status === 'analyzing' && <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> 分析中...</>}
-                          {draft.status === 'pending' && '等待中'}
-                          {draft.status === 'error' && <><AlertCircle className="w-3 h-3 mr-1 text-red-500" /> 分析失败</>}
+                      <div className="flex flex-col gap-1 w-full">
+                        <span className="text-xs flex items-center text-gray-500 font-medium">
+                          {draft.status === 'analyzing' && <><Loader2 className="w-3 h-3 mr-1.5 animate-spin text-primary" /> 深度分析中...</>}
+                          {draft.status === 'pending' && <span className="text-gray-400">队列等待中</span>}
+                          {draft.status === 'error' && <><AlertCircle className="w-3 h-3 mr-1.5 text-red-500" /> 分析失败</>}
                         </span>
-                        {draft.errorMsg && <span className="text-[10px] text-red-400 flex items-center"><Info className="w-2.5 h-2.5 mr-1" /> {draft.errorMsg}</span>}
+                        {draft.errorMsg && <span className="text-[10px] text-red-500 bg-red-100/50 px-2 py-0.5 rounded flex items-center"><Info className="w-2.5 h-2.5 mr-1" /> {draft.errorMsg}</span>}
                       </div>
                     )}
                   </div>
