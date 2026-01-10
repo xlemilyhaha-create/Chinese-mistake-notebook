@@ -1,12 +1,7 @@
-
 import React, { useState, useRef } from 'react';
 import { Loader2, CheckCircle, AlertCircle, Camera, Image as ImageIcon, X, ScrollText, Type, RefreshCw, Info } from 'lucide-react';
 import { analyzeWordsBatch, extractWordsFromImage, analyzePoem } from '../services/geminiService';
 import { WordEntry, QuestionType, AnalysisResult, EntryType, TestStatus } from '../types';
-
-interface WordEntryFormProps {
-  onAddWord: (entry: WordEntry) => void;
-}
 
 interface DraftEntry {
   id: string;
@@ -16,6 +11,10 @@ interface DraftEntry {
   status: 'pending' | 'analyzing' | 'done' | 'error';
   errorMsg?: string;
   type: EntryType;
+}
+
+interface WordEntryFormProps {
+  onAddWord: (entry: WordEntry) => void;
 }
 
 const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
@@ -31,9 +30,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
   const getUniqueWords = (text: string) => {
     const normalized = text.replace(/\s+(vs|VS)\s+/g, ' vs ')
                            .replace(/([^\s])(\/|\|)([^\s])/g, '$1 / $3');
-    
     const lines = normalized.split(/[\n,，、;；]+/).map(w => w.trim()).filter(w => w.length > 0);
-    
     const results: string[] = [];
     lines.forEach(line => {
       if (line.toLowerCase().includes(' vs ') || line.includes('/') || line.includes('和')) {
@@ -43,36 +40,31 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
         results.push(...parts);
       }
     });
-    
     return Array.from(new Set(results));
   };
 
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-  // 核心优化：严格串行处理
   const performAnalysis = async (wordsToAnalyze: string[]) => {
     if (wordsToAnalyze.length === 0) return;
     setIsProcessing(true);
-    
     let processedCount = 0;
     
-    // 遍历每一个词，不再分批，而是逐个发送请求，以保证 429 报错后可以精确定位到是哪个词
     for (const word of wordsToAnalyze) {
       setDrafts(prev => prev.map(d => d.word === word && d.status !== 'done' ? { ...d, status: 'analyzing', errorMsg: undefined } : d));
       setProcessingStatus(`正在深度分析: ${word} (${processedCount + 1}/${wordsToAnalyze.length})`);
       
       try {
-        // 单个词发送
         const batchResults = await analyzeWordsBatch([word]);
         const result = batchResults[0];
 
         if (result) {
           setDrafts(prev => prev.map(d => {
             if (d.word !== word) return d;
-            let types = [...d.enabledTypes];
-            if (!result.definitionData) types = types.filter(t => t !== QuestionType.DEFINITION);
-            if (!result.definitionMatchData) types = types.filter(t => t !== QuestionType.DEFINITION_MATCH);
-            return { ...d, analysis: result, enabledTypes: types, status: 'done' };
+            // 修正点：即使 AI 没返回对应数据，也保留用户的初始 enabledTypes 选择
+            // 后续保存时如果确实没数据，在 ExamGenerator 渲染时会自动跳过，
+            // 但不能在这里静默修改用户的意图，否则会导致用户发现勾选的考点“不见了”
+            return { ...d, analysis: result, status: 'done' };
           }));
         } else {
           setDrafts(prev => prev.map(d => d.word === word ? { ...d, status: 'error', errorMsg: 'AI解析超时' } : d));
@@ -81,23 +73,17 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
         const isRateLimit = e.message?.includes('429') || e.message?.toLowerCase().includes('too many requests');
         const errorMsg = isRateLimit ? '服务器忙(请稍后重试)' : '接口异常';
         setDrafts(prev => prev.map(d => d.word === word ? { ...d, status: 'error', errorMsg } : d));
-        
-        // 如果遇到 429，立即中断后续请求，防止被永久封禁
         if (isRateLimit) {
            setProcessingStatus(`触发频率限制，已停止后续请求`);
            break;
         }
       }
-      
       processedCount++;
       if (processedCount < wordsToAnalyze.length) {
-        // 增加词与词之间的冷却时间
         setProcessingStatus(`AI 正在休息... (${processedCount}/${wordsToAnalyze.length})`);
         await delay(5000); 
       }
     }
-    
-    setProcessingStatus(processedCount === wordsToAnalyze.length ? '全部分析完成' : '分析已中止');
     setIsProcessing(false);
   };
 
@@ -122,60 +108,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     if (failedItems.length === 0) return;
     const failedWords = failedItems.map(d => d.word);
     setDrafts(prev => prev.map(d => d.status === 'error' ? { ...d, status: 'pending', errorMsg: undefined } : d));
-    setProcessingStatus('正在重试...');
-    await delay(2000);
     await performAnalysis(failedWords);
-  };
-
-  const handleAnalyzePoem = async () => {
-    if (!poemInput.trim()) return;
-    setIsProcessing(true);
-    setProcessingStatus('正在分析古诗词...');
-    try {
-       const res = await analyzePoem(poemInput);
-       if (res) {
-         setDrafts([{
-           id: crypto.randomUUID(),
-           word: res.word,
-           analysis: res,
-           enabledTypes: [QuestionType.POEM_FILL, QuestionType.POEM_DEFINITION],
-           status: 'done',
-           type: EntryType.POEM
-         }]);
-         setPoemInput('');
-       }
-    } catch (err: any) {
-      setProcessingStatus(err.message?.includes('429') ? 'AI正忙' : '分析出错');
-    } finally {
-      setIsProcessing(false);
-      setProcessingStatus('');
-    }
-  };
-
-  const processBase64Image = async (base64: string, mimeType: string) => {
-    setIsProcessing(true);
-    setProcessingStatus('正在识别图片...');
-    try {
-      const extractedWords = await extractWordsFromImage(base64, mimeType);
-      if (extractedWords.length > 0) {
-        setInputText(prev => prev ? `${prev} ${extractedWords.join(' ')}` : extractedWords.join(' '));
-      }
-    } finally {
-      setIsProcessing(false);
-      setProcessingStatus('');
-    }
-  };
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64String = (reader.result as string).split(',')[1];
-      processBase64Image(base64String, file.type);
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
   };
 
   const handleSaveAll = () => {
@@ -209,7 +142,6 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     }));
   };
 
-  const hasFailedItems = drafts.some(d => d.status === 'error');
   const finishedItemsCount = drafts.filter(d => d.status === 'done').length;
 
   return (
@@ -232,13 +164,9 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
               placeholder="输入字词，或录入对：'改变 vs 改善'"
               className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary outline-none min-h-[100px] resize-y"
             />
-            <div className="absolute bottom-3 right-3 flex gap-2">
-              <button onClick={() => fileInputRef.current?.click()} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 transition-colors"><ImageIcon className="w-5 h-5" /></button>
-              <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
-            </div>
           </div>
           <div className="flex flex-wrap items-center gap-4 mb-4">
-            <span className="text-sm text-gray-600 font-medium">考点:</span>
+            <span className="text-sm text-gray-600 font-medium">默认考点:</span>
             {[QuestionType.PINYIN, QuestionType.DICTATION, QuestionType.DEFINITION, QuestionType.DEFINITION_MATCH].map(t => (
                <label key={t} className="flex items-center space-x-2 cursor-pointer select-none">
                  <input type="checkbox" checked={defaultTypes.includes(t)} onChange={() => setDefaultTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])} className="w-4 h-4 text-primary rounded border-gray-300" />
@@ -250,7 +178,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
              <div className="text-sm text-gray-500">
                {processingStatus && <span className="flex items-center text-primary font-medium"><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {processingStatus}</span>}
              </div>
-             <button onClick={handleAnalyzeWords} disabled={isProcessing || !inputText.trim()} className="bg-primary hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold transition-all transform active:scale-95 disabled:opacity-50 disabled:scale-100">开始分析</button>
+             <button onClick={handleAnalyzeWords} disabled={isProcessing || !inputText.trim()} className="bg-primary hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold transition-all transform active:scale-95 disabled:opacity-50 disabled:scale-100 shadow-md">开始分析</button>
           </div>
         </div>
       ) : (
@@ -258,7 +186,16 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
           <textarea value={poemInput} onChange={(e) => setPoemInput(e.target.value)} placeholder="输入诗名或全诗内容。" className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary outline-none min-h-[120px]" />
           <div className="flex justify-between items-center border-t pt-3">
              <div className="text-sm text-gray-500">{processingStatus && <span className="flex items-center text-primary font-medium"><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {processingStatus}</span>}</div>
-             <button onClick={handleAnalyzePoem} disabled={isProcessing || !poemInput.trim()} className="bg-primary hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold transition-all transform active:scale-95 disabled:opacity-50">分析古诗</button>
+             <button onClick={async () => {
+                setIsProcessing(true);
+                try {
+                  const res = await analyzePoem(poemInput);
+                  if (res) {
+                    setDrafts([{ id: crypto.randomUUID(), word: res.word, analysis: res, enabledTypes: [QuestionType.POEM_FILL, QuestionType.POEM_DEFINITION], status: 'done', type: EntryType.POEM }]);
+                    setPoemInput('');
+                  }
+                } finally { setIsProcessing(false); }
+             }} disabled={isProcessing || !poemInput.trim()} className="bg-primary hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold shadow-md disabled:opacity-50">分析古诗</button>
           </div>
         </div>
       )}
@@ -268,9 +205,6 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-md font-bold text-gray-800">识别进度 ({finishedItemsCount}/{drafts.length})</h3>
             <div className="flex gap-2">
-              {hasFailedItems && (
-                <button onClick={handleRetryFailed} disabled={isProcessing} className="bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-200 px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center disabled:opacity-50"><RefreshCw className={`w-4 h-4 mr-2 ${isProcessing ? 'animate-spin' : ''}`} /> 尝试重测失败项</button>
-              )}
               <button onClick={handleSaveAll} disabled={isProcessing || finishedItemsCount === 0} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center shadow-sm disabled:opacity-50"><CheckCircle className="w-4 h-4 mr-2" /> 确认入库</button>
             </div>
           </div>
@@ -291,9 +225,22 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
                           <>
                             {['注音', '书写', '释义', '辨析'].map((label, idx) => {
                               const type = [QuestionType.PINYIN, QuestionType.DICTATION, QuestionType.DEFINITION, QuestionType.DEFINITION_MATCH][idx];
-                              const isAvailable = (idx < 2 && !draft.word.includes(' vs ') && !draft.word.includes('/')) || (idx === 2 && draft.analysis?.definitionData) || (idx === 3 && draft.analysis?.definitionMatchData);
-                              if (!isAvailable && idx !== 3) return null;
-                              return <button key={type} onClick={() => toggleEditType(draft.id, type)} className={`px-2 py-0.5 text-[10px] font-bold rounded border transition-colors ${draft.enabledTypes.includes(type) ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}>{label}</button>
+                              // 优化：只要不是对比词，注音和书写始终显示；释义和辨析也始终显示，但如果缺失数据会变灰提示。
+                              const isComparison = draft.word.includes(' vs ') || draft.word.includes('/');
+                              const hasData = (idx === 0 || idx === 1) ? !isComparison : (idx === 2 ? !!draft.analysis?.definitionData : !!draft.analysis?.definitionMatchData);
+                              
+                              if (isComparison && (idx === 0 || idx === 1)) return null;
+
+                              return (
+                                <button 
+                                  key={type} 
+                                  onClick={() => toggleEditType(draft.id, type)} 
+                                  className={`px-2 py-0.5 text-[10px] font-bold rounded border transition-colors flex items-center gap-1 ${draft.enabledTypes.includes(type) ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'} ${!hasData ? 'opacity-50' : ''}`}
+                                >
+                                  {label}
+                                  {!hasData && <Info className="w-2 h-2" title="AI未返回此项数据" />}
+                                </button>
+                              );
                             })}
                           </>
                         ) : (
@@ -307,7 +254,6 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
                           {draft.status === 'pending' && <span className="text-gray-400">队列排队中</span>}
                           {draft.status === 'error' && <><AlertCircle className="w-3 h-3 mr-1.5 text-red-500" /> 分析中断</>}
                         </span>
-                        {draft.errorMsg && <span className="text-[10px] text-red-500 bg-red-100/50 px-2 py-0.5 rounded flex items-center"><Info className="w-2.5 h-2.5 mr-1" /> {draft.errorMsg}</span>}
                       </div>
                     )}
                   </div>

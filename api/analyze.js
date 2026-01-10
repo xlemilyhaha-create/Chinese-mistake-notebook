@@ -3,13 +3,13 @@ import { GoogleGenAI, Type } from "@google/genai";
 const itemSchemaProperties = {
   word: { type: Type.STRING, description: "原始词语" },
   pinyin: { type: Type.STRING },
-  hasDefinitionQuestion: { type: Type.BOOLEAN },
+  hasDefinitionQuestion: { type: Type.BOOLEAN, description: "是否生成释义选择题，对于普通词语和成语必须为 true" },
   targetChar: { type: Type.STRING, nullable: true },
-  options: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true },
+  options: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true, description: "4个释义选项" },
   correctIndex: { type: Type.INTEGER, nullable: true },
   hasMatchQuestion: { type: Type.BOOLEAN },
   matchMode: { type: Type.STRING, description: "SAME_AS_TARGET (找字义相同), SYNONYM_CHOICE (选词填空), or TWO_WAY_COMPARE (二选一判断)" },
-  matchContext: { type: Type.STRING, nullable: true, description: "题目涉及的句子，如果是选词填空，句子中必须包含 ( ) 符号" },
+  matchContext: { type: Type.STRING, nullable: true },
   matchOptions: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true },
   matchCorrectIndex: { type: Type.INTEGER, nullable: true },
   compareWordA: { type: Type.STRING, nullable: true },
@@ -25,7 +25,7 @@ const batchAnalysisSchema = {
       items: {
         type: Type.OBJECT,
         properties: itemSchemaProperties,
-        required: ["word", "pinyin", "hasMatchQuestion"]
+        required: ["word", "pinyin", "hasDefinitionQuestion", "hasMatchQuestion"]
       }
     }
   },
@@ -109,22 +109,18 @@ export default async function handler(req, res) {
 
     if (type === 'batch-words') {
       parts = [{ text: `你是一个资深的语文教育专家。分析：${words.join(', ')}。
-      针对每个词语产出辨析题(matchMode)：
-      1. 如果是对比词（如“改变 vs 改善”），必须使用 SYNONYM_CHOICE 模式。
-         - matchContext 必须是一个包含 ( ) 的完整句子，如“政府决定 ( ) 环境。”
-         - matchOptions 是对比的两个词。
-      2. 如果是单个词，使用 SAME_AS_TARGET。
-         - 考察该词中某个重点字的含义，matchContext 包含该词，options 给出其他包含该字的词供选择。
-      3. 如果指定对比字义，用 TWO_WAY_COMPARE。` }];
+      
+      【强制要求】：
+      1. 每个词语/成语都【必须】生成释义选择题 (hasDefinitionQuestion: true)，给出词语的准确含义及3个干扰项。
+      2. 每个词语/成语都【必须】生成辨析题 (hasMatchQuestion: true)。
+      3. 如果是成语（如“低声细语”），重点分析其整体含义。
+      4. 如果是对比词（如“改变 vs 改善”），使用 SYNONYM_CHOICE 模式。
+      
+      请确保 results 数组中每个对象都完整包含 definitionData 和 matchData 相关字段。` }];
       schema = batchAnalysisSchema;
       thinkingBudget = 4000;
     } else if (type === 'poem') {
-      parts = [{ text: `你是一个资深的语文教育专家。分析古诗词 "${text}"。
-      
-      【默写题核心规则 - 严禁重复】：
-      - 从全诗中挑选 2-4 行进行默写，每行只能出现一次。
-      
-      请产出结构化 JSON。` }];
+      parts = [{ text: `你是一个资深的语文教育专家。分析古诗词 "${text}"...` }];
       schema = poemSchema;
       thinkingBudget = 10000;
     } else if (type === 'ocr') {
