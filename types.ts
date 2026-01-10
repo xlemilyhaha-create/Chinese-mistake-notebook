@@ -13,6 +13,12 @@ export enum QuestionType {
   POEM_DEFINITION = 'POEM_DEFINITION' // Poem -> Select Meaning of character
 }
 
+export enum TestStatus {
+  UNTESTED = 'UNTESTED',
+  PASSED = 'PASSED',
+  FAILED = 'FAILED'
+}
+
 export interface DefinitionQuestionData {
   targetChar: string; // The specific character being tested (e.g., "益" in "精益求精")
   options: string[]; // 4 options (Definitions)
@@ -61,6 +67,10 @@ export interface WordEntry {
   
   // User preferences
   enabledTypes: QuestionType[]; 
+  
+  // Review Status
+  testStatus: TestStatus;
+  passedAfterRetries: boolean;
 }
 
 export interface FilterOptions {

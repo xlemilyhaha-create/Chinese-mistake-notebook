@@ -1,20 +1,88 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# 语文错题本 - 智能助手 (Yuwen Cuoti Helper)
 
-# Run and deploy your AI Studio app
+## 📖 项目简介
 
-This contains everything you need to run your app locally.
+这是一个专为中小学生设计的语文错题收集与练习生成工具。利用 Google Gemini AI 模型，它能智能分析生字词和古诗文，自动生成拼音、释义、辨析等练习题，并支持一键生成 A4 格式的试卷（含答案页），帮助学生高效复习。
 
-View your app in AI Studio: https://ai.studio/apps/drive/1uQI4wzLxvlk4ydO0YW2uhaDWb3X5s7-e
+## 🚀 核心功能
 
-## Run Locally
+### 1. 智能录入 (Smart Entry)
+支持多种方式录入错题，AI 会自动进行结构化分析。
 
-**Prerequisites:**  Node.js
+*   **生字词录入**：
+    *   **手动输入**：支持批量输入字词（空格或逗号分隔）。
+    *   **拍照/图片识别 (OCR)**：调用摄像头或上传图片，自动识别图片中的汉字并添加到分析队列。
+    *   **AI 分析内容**：自动生成拼音、提取字义、生成易混淆字辨析题（用于选择题选项）。
+*   **古诗词录入**：
+    *   输入诗名或全诗，AI 自动补全朝代、作者、全文。
+    *   自动生成“古诗默写”填空题（上下文提示）。
+    *   自动生成重点字词的“释义选择题”。
 
+### 2. 错题管理 (Management)
+*   **草稿箱机制**：录入后先进入草稿状态，确认 AI 分析无误后保存至题库。
+*   **考点定制**：针对每个词条，可单独开启/关闭特定的考察类型（如：只考注音，不考释义）。
+*   **本地存储**：数据默认保存在浏览器本地 (LocalStorage)，保护隐私且加载迅速。
+*   **数据导入/导出**：支持 JSON 格式的数据备份与恢复，防止数据丢失。
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### 3. 智能组卷 (Exam Generator)
+将收集的错题一键转化为标准的纸质试卷格式。
+
+*   **筛选功能**：可按录入日期筛选错题，生成专项练习。
+*   **题型支持**：
+    1.  **看汉字写拼音**：自动生成田字格/拼音格样式。
+    2.  **看拼音写词语**：标准的看拼音写汉字练习。
+    3.  **古诗文默写**：根据上下文填写名句。
+    4.  **古诗文阅读与释义**：针对诗中重点字词的选择题。
+    5.  **字义选择**：考察单字在词语中的具体含义。
+    6.  **字义辨析**：考察同一字在不同词语中含义的异同。
+*   **打印优化**：
+    *   **A4 纸张排版**：CSS 针对打印媒体查询 (`@media print`) 进行了深度优化。
+    *   **双页模式**：第一页为试卷，第二页自动生成对应的参考答案与解析。
+    *   **PDF 导出**：通过浏览器的打印功能即可另存为高质量 PDF。
+
+## 🛠 技术栈
+
+*   **前端框架**: React 19 + TypeScript
+*   **构建工具**: Vite
+*   **UI 样式**: Tailwind CSS (支持移动端响应式与 A4 打印布局)
+*   **AI 模型**: Google Gemini 2.5 Flash (通过 Serverless Function 调用)
+*   **图标库**: Lucide React
+
+## 📂 项目结构
+
+```
+/
+├── api/                  # Vercel Serverless Functions
+│   └── analyze.js        # Gemini API 代理 (保护 API Key, 处理 AI 请求)
+├── components/           # React 组件
+│   ├── WordEntryForm.tsx # 录入表单 (含拍照、OCR、输入)
+│   ├── WordList.tsx      # 错题列表展示与管理
+│   └── ExamGenerator.tsx # 试卷生成器 (核心打印逻辑)
+├── services/
+│   └── geminiService.ts  # 前端 AI 服务调用封装
+├── types.ts              # TypeScript 类型定义 (WordEntry, PoemData 等)
+├── App.tsx               # 主应用逻辑
+├── index.html            # 入口 HTML (含打印样式重置)
+└── index.tsx             # React 挂载点
+```
+
+## 📝 使用指南
+
+1.  **配置 API Key**:
+    *   项目依赖 Google Gemini API。
+    *   需要在部署环境（如 Vercel）的环境变量中配置 `API_KEY`。
+2.  **录入错题**:
+    *   点击“生字词录入”或“古诗词录入”。
+    *   输入内容后点击“开始分析”。
+    *   等待 AI 处理完成后，检查结果，点击“确认添加”。
+3.  **生成试卷**:
+    *   点击右上角的“生成试卷”按钮。
+    *   选择日期范围（或默认所有错题）。
+    *   点击“打印 / 下载PDF”按钮。
+    *   在打印预览窗口中，目标打印机选择“另存为 PDF”即可保存电子版，或直接连接打印机打印。
+
+## ⚠️ 注意事项
+
+*   **打印设置**: 打印时请确保勾选“背景图形”以正确显示田字格线条。
+*   **OCR**: 拍照识别功能依赖设备摄像头权限，且识别准确率受光线和手写字体工整度影响。
+*   **数据安全**: 目前版本为单机版（数据在浏览器端），请定期使用“备份数据”功能导出 JSON 文件。

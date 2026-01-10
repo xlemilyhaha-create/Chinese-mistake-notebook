@@ -1,10 +1,9 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Default to Node.js runtime (more stable for Google SDK than Edge)
 const apiKey = process.env.API_KEY;
 
-// --- SCHEMAS ---
+// 定义单个词语分析的属性
 const itemSchemaProperties = {
   word: { type: Type.STRING },
   pinyin: { type: Type.STRING },
@@ -17,10 +16,20 @@ const itemSchemaProperties = {
   matchCorrectIndex: { type: Type.INTEGER, nullable: true }
 };
 
-const singleAnalysisSchema = {
+// 批量分析 Schema (数组)
+const batchAnalysisSchema = {
   type: Type.OBJECT,
-  properties: itemSchemaProperties,
-  required: ["pinyin", "word"],
+  properties: {
+    results: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: itemSchemaProperties,
+        required: ["word", "pinyin"]
+      }
+    }
+  },
+  required: ["results"]
 };
 
 const poemSchema = {
@@ -66,7 +75,6 @@ const ocrSchema = {
   }
 };
 
-// Helper to clean JSON
 const cleanJson = (text) => {
   if (!text) return '{}';
   let cleaned = text.trim();
@@ -80,59 +88,37 @@ const cleanJson = (text) => {
 };
 
 export default async function handler(req, res) {
-  // CORS Handling
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-  );
+  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
 
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
-  }
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
-  }
-
-  if (!apiKey) {
-    console.error("CRITICAL: Server API Key is missing in environment variables.");
-    return res.status(500).json({ error: "Server API Key missing. Please configure API_KEY in Vercel Settings." });
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+  if (!apiKey) return res.status(500).json({ error: "Server API Key missing." });
 
   try {
     const ai = new GoogleGenAI({ apiKey });
-    const { type, text, image } = req.body;
+    const { type, text, words, image } = req.body;
 
     let model = 'gemini-2.5-flash';
     let parts = [];
     let schema = null;
 
-    switch (type) {
-      case 'word':
-        // Concise prompt to save time
-        parts = [{ text: `Analyze word "${text}". JSON output: pinyin, definition test, definition match test.` }];
-        schema = singleAnalysisSchema;
-        break;
-
-      case 'poem':
-        parts = [{ text: `Analyze poem "${text}". JSON output: title, author, fill questions, definition questions.` }];
-        schema = poemSchema;
-        break;
-
-      case 'ocr':
-        parts = [
-          { inlineData: { mimeType: 'image/jpeg', data: image } },
-          { text: "List Chinese words/idioms." }
-        ];
-        schema = ocrSchema;
-        break;
-
-      default:
-        return res.status(400).json({ error: "Invalid request type" });
+    if (type === 'batch-words') {
+      parts = [{ text: `Analyze the following Chinese words/idioms: ${words.join(', ')}. For each word, provide pinyin, a definition multiple choice question, and a character usage match question. Return an array of results.` }];
+      schema = batchAnalysisSchema;
+    } else if (type === 'poem') {
+      parts = [{ text: `Analyze poem "${text}". JSON output: title, author, fill questions, definition questions.` }];
+      schema = poemSchema;
+    } else if (type === 'ocr') {
+      parts = [
+        { inlineData: { mimeType: 'image/jpeg', data: image } },
+        { text: "Extract and list only the Chinese words or idioms from this worksheet. Ignore single non-content characters." }
+      ];
+      schema = ocrSchema;
+    } else {
+      return res.status(400).json({ error: "Invalid request type" });
     }
 
     const response = await ai.models.generateContent({
@@ -151,6 +137,6 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error("Backend API Error:", error);
-    return res.status(500).json({ error: error.message || "Internal Server Error", details: error.toString() });
+    return res.status(500).json({ error: error.message || "Internal Server Error" });
   }
 }

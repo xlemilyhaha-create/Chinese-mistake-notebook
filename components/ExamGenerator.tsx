@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
-import { WordEntry, QuestionType } from '../types';
-import { Printer, ArrowLeft, Sliders, AlertCircle } from 'lucide-react';
+import { WordEntry, QuestionType, TestStatus } from '../types';
+import { Printer, ArrowLeft, Filter, AlertCircle } from 'lucide-react';
 
 interface ExamGeneratorProps {
   words: WordEntry[];
@@ -9,18 +9,43 @@ interface ExamGeneratorProps {
 }
 
 const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
-  const [selectedDate, setSelectedDate] = useState<string>('');
   const [isPrinting, setIsPrinting] = useState(false);
   
+  // Filters
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [selectedStatuses, setSelectedStatuses] = useState<TestStatus[]>([TestStatus.UNTESTED, TestStatus.FAILED]); // Default: Test needed
+  const [difficultyMode, setDifficultyMode] = useState<'ALL' | 'HARD_ONLY' | 'NORMAL_ONLY'>('ALL');
+
   const availableDates = useMemo(() => {
     const dates = new Set(words.map(w => new Date(w.createdAt).toLocaleDateString('zh-CN')));
     return Array.from(dates).sort().reverse();
   }, [words]);
 
   const filteredWords = useMemo(() => {
-    if (!selectedDate) return words;
-    return words.filter(w => new Date(w.createdAt).toLocaleDateString('zh-CN') === selectedDate);
-  }, [words, selectedDate]);
+    return words.filter(w => {
+      // Date Filter
+      if (selectedDate && new Date(w.createdAt).toLocaleDateString('zh-CN') !== selectedDate) {
+        return false;
+      }
+      
+      // Status Filter (If empty, show all? No, logical OR)
+      if (selectedStatuses.length > 0 && !selectedStatuses.includes(w.testStatus)) {
+        return false;
+      }
+      
+      // Difficulty Filter
+      if (difficultyMode === 'HARD_ONLY' && !w.passedAfterRetries) return false;
+      if (difficultyMode === 'NORMAL_ONLY' && w.passedAfterRetries) return false;
+
+      return true;
+    });
+  }, [words, selectedDate, selectedStatuses, difficultyMode]);
+
+  const toggleStatus = (status: TestStatus) => {
+    setSelectedStatuses(prev => 
+      prev.includes(status) ? prev.filter(s => s !== status) : [...prev, status]
+    );
+  };
 
   const questions = useMemo(() => {
     const qs = {
@@ -82,41 +107,92 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      <div className="bg-white border-b p-4 flex flex-col md:flex-row items-center justify-between gap-4 no-print shadow-sm z-10 shrink-0">
-        <div className="flex items-center gap-4 w-full md:w-auto">
-          <button onClick={onBack} className="text-gray-500 hover:text-gray-800 flex items-center">
-            <ArrowLeft className="w-5 h-5 mr-1" /> 返回
-          </button>
-          <div className="h-6 w-px bg-gray-300 hidden md:block"></div>
-          <div className="flex items-center gap-2 flex-1 md:flex-none">
-            <Sliders className="w-4 h-4 text-gray-500" />
-            <select 
-              className="border rounded px-3 py-1.5 text-sm bg-gray-50 min-w-[160px]"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-            >
-              <option value="">所有日期 ({words.length} 词)</option>
-              {availableDates.map(date => (
-                <option key={date} value={date}>{date}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+      <div className="bg-white border-b p-4 flex flex-col gap-4 no-print shadow-sm z-10 shrink-0">
         
-        <div className="flex items-center gap-4">
-          <div className="text-xs text-gray-500 hidden lg:flex items-center">
-             <AlertCircle className="w-3 h-3 mr-1" />
-             预览为连续模式，打印/PDF将自动分页
-          </div>
-          <button 
-            onClick={handlePrint}
-            disabled={isPrinting}
-            className="bg-primary hover:bg-indigo-700 text-white px-5 py-2 rounded-lg shadow flex items-center font-medium transition-colors disabled:opacity-70"
-          >
-            <Printer className="w-5 h-5 mr-2" />
-            {isPrinting ? '正在调用打印...' : '打印 / 下载PDF'}
-          </button>
+        {/* Top Bar: Nav & Actions */}
+        <div className="flex items-center justify-between">
+            <button onClick={onBack} className="text-gray-500 hover:text-gray-800 flex items-center">
+                <ArrowLeft className="w-5 h-5 mr-1" /> 返回
+            </button>
+            <div className="flex items-center gap-4">
+                <div className="text-xs text-gray-500 hidden lg:flex items-center">
+                    <AlertCircle className="w-3 h-3 mr-1" />
+                    预览为连续模式，打印/PDF将自动分页
+                </div>
+                <button 
+                    onClick={handlePrint}
+                    disabled={isPrinting || filteredWords.length === 0}
+                    className="bg-primary hover:bg-indigo-700 text-white px-5 py-2 rounded-lg shadow flex items-center font-medium transition-colors disabled:opacity-50"
+                >
+                    <Printer className="w-5 h-5 mr-2" />
+                    {isPrinting ? '正在准备...' : '打印 / 下载PDF'}
+                </button>
+            </div>
         </div>
+
+        {/* Filter Bar */}
+        <div className="flex flex-wrap items-center gap-6 bg-gray-50 p-3 rounded-lg border border-gray-100">
+            <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-gray-400" />
+                <span className="text-sm font-bold text-gray-700">组卷规则:</span>
+            </div>
+
+            <div className="flex items-center gap-3 border-r border-gray-300 pr-4">
+                <label className="text-sm text-gray-600">日期:</label>
+                <select 
+                    className="border rounded px-2 py-1 text-sm bg-white min-w-[120px]"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                >
+                    <option value="">所有日期</option>
+                    {availableDates.map(date => (
+                        <option key={date} value={date}>{date}</option>
+                    ))}
+                </select>
+            </div>
+
+            <div className="flex items-center gap-3 border-r border-gray-300 pr-4">
+                <label className="text-sm text-gray-600">包含状态:</label>
+                <div className="flex gap-2">
+                    <button 
+                        onClick={() => toggleStatus(TestStatus.UNTESTED)}
+                        className={`text-xs px-2 py-1 rounded border ${selectedStatuses.includes(TestStatus.UNTESTED) ? 'bg-gray-200 border-gray-400 text-gray-800 font-bold' : 'bg-white text-gray-500'}`}
+                    >
+                        未测试
+                    </button>
+                    <button 
+                        onClick={() => toggleStatus(TestStatus.FAILED)}
+                        className={`text-xs px-2 py-1 rounded border ${selectedStatuses.includes(TestStatus.FAILED) ? 'bg-red-100 border-red-300 text-red-700 font-bold' : 'bg-white text-gray-500'}`}
+                    >
+                        未通过
+                    </button>
+                    <button 
+                        onClick={() => toggleStatus(TestStatus.PASSED)}
+                        className={`text-xs px-2 py-1 rounded border ${selectedStatuses.includes(TestStatus.PASSED) ? 'bg-green-100 border-green-300 text-green-700 font-bold' : 'bg-white text-gray-500'}`}
+                    >
+                        已通过
+                    </button>
+                </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+                <label className="text-sm text-gray-600">难度:</label>
+                <select 
+                    className="border rounded px-2 py-1 text-sm bg-white"
+                    value={difficultyMode}
+                    onChange={(e) => setDifficultyMode(e.target.value as any)}
+                >
+                    <option value="ALL">全部</option>
+                    <option value="HARD_ONLY">仅困难 (多次重测)</option>
+                    <option value="NORMAL_ONLY">仅普通</option>
+                </select>
+            </div>
+
+            <div className="ml-auto text-sm text-primary font-bold">
+                已选 {filteredWords.length} 题
+            </div>
+        </div>
+
       </div>
 
       <div className="flex-1 overflow-auto bg-gray-100 p-8 flex justify-center">

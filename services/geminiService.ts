@@ -1,10 +1,7 @@
 
 import { AnalysisResult, EntryType } from "../types";
 
-// --- GEMINI ANALYZER (Pure Backend Proxy) ---
-
 const analyzeWithGeminiBackend = async (payload: any) => {
-  // Use AbortController to enforce a timeout (60s to match Vercel function limits)
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 60000); 
 
@@ -17,45 +14,34 @@ const analyzeWithGeminiBackend = async (payload: any) => {
     });
     clearTimeout(timeoutId);
 
-    const contentType = response.headers.get("content-type");
-    if (!response.ok || !contentType || !contentType.includes("application/json")) {
-      // If server error or HTML returned (Preview environment), just throw.
-      // We do NOT fallback to client-side key because we want to be secure.
-      throw new Error(`Backend API failure: ${response.status} ${response.statusText}`);
+    if (!response.ok) {
+      throw new Error(`API failure: ${response.status}`);
     }
 
     return await response.json();
-
   } catch (error: any) {
     clearTimeout(timeoutId);
-    console.error("Analysis Error:", error);
-    // Re-throw to let the UI show the error state
     throw error;
   }
 };
 
-
-// --- EXPORTED FUNCTIONS ---
-
-export const analyzeWord = async (word: string): Promise<AnalysisResult> => {
+export const analyzeWordsBatch = async (words: string[]): Promise<AnalysisResult[]> => {
   try {
-    const data = await analyzeWithGeminiBackend({ type: 'word', text: word });
-    return mapDataToResult(data);
+    const data = await analyzeWithGeminiBackend({ type: 'batch-words', words });
+    if (data.results && Array.isArray(data.results)) {
+      return data.results.map((item: any) => mapDataToResult(item));
+    }
+    return [];
   } catch (error) {
-    console.error(`Failed to analyze word: ${word}`, error);
-    // Return error state so UI shows red icon
-    return { type: EntryType.WORD, word, pinyin: "Error", definitionData: null, definitionMatchData: null };
+    console.error("Batch Analysis Error:", error);
+    throw error;
   }
 };
 
-export const analyzeWordsBatch = async (words: string[]): Promise<Record<string, AnalysisResult>> => {
-  const results: Record<string, AnalysisResult> = {};
-  // Process sequentially or in small parallel batches to avoid overwhelming the server
-  // but here we just call analyzeWord which calls the backend
-  for (const word of words) {
-    results[word] = await analyzeWord(word);
-  }
-  return results;
+// Keep single for compatibility or poems
+export const analyzeWord = async (word: string): Promise<AnalysisResult> => {
+  const res = await analyzeWordsBatch([word]);
+  return res[0];
 };
 
 export const analyzePoem = async (input: string): Promise<AnalysisResult | null> => {
@@ -78,7 +64,6 @@ export const analyzePoem = async (input: string): Promise<AnalysisResult | null>
       }
     };
   } catch (error) {
-    console.error("Poem Analysis Error:", error);
     return null;
   }
 };
@@ -88,7 +73,6 @@ export const extractWordsFromImage = async (base64Data: string, mimeType: string
     const data = await analyzeWithGeminiBackend({ type: 'ocr', image: base64Data });
     return data.words || [];
   } catch (error) {
-    console.error("OCR Error:", error);
     return [];
   }
 };
