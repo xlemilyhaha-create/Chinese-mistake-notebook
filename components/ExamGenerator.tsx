@@ -1,14 +1,18 @@
 import React, { useState, useMemo } from 'react';
 import { WordEntry, QuestionType, MatchMode } from '../types';
-import { Printer, ArrowLeft, Filter, Download, Copy, FileJson, Check } from 'lucide-react';
+import { Printer, ArrowLeft, Filter, Download, Copy, FileJson, Check, Loader2 } from 'lucide-react';
 
 interface ExamGeneratorProps {
   words: WordEntry[];
   onBack: () => void;
 }
 
+// 声明全局 html2pdf 避免 TS 报错
+declare var html2pdf: any;
+
 const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
   const [isPrinting, setIsPrinting] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [copySuccess, setCopySuccess] = useState(false);
 
@@ -46,6 +50,40 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
     setTimeout(() => {
       try { window.print(); } catch (e) { alert("调用打印失败"); } finally { setIsPrinting(false); }
     }, 500);
+  };
+
+  const handleDownloadPdf = async () => {
+    if (typeof html2pdf === 'undefined') {
+      alert("PDF 生成组件尚未加载完成，请稍候");
+      return;
+    }
+
+    setIsDownloading(true);
+    const element = document.getElementById('printable-root');
+    const filename = `语文错题专项练习_${selectedDate || '汇总'}.pdf`;
+    
+    const opt = {
+      margin: 0, // 我们内部已经有 padding 了
+      filename: filename,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { 
+        scale: 2, // 提高清晰度
+        useCORS: true,
+        logging: false,
+        letterRendering: true
+      },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['css', 'legacy'] } // 尊重 CSS 的分页规则
+    };
+
+    try {
+      await html2pdf().set(opt).from(element).save();
+    } catch (err) {
+      console.error("PDF download error:", err);
+      alert("生成 PDF 失败，请尝试使用打印功能中的另存为 PDF");
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const handleExportJson = () => {
@@ -114,8 +152,13 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
                   {copySuccess ? <Check className="w-4 h-4 mr-2 text-green-500" /> : <Copy className="w-4 h-4 mr-2" />}
                   复制文本
                 </button>
-                <button onClick={handleExportJson} className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center transition-all shadow-sm active:scale-95">
-                  <FileJson className="w-4 h-4 mr-2 text-orange-500" /> 导出数据
+                <button 
+                  onClick={handleDownloadPdf} 
+                  disabled={isDownloading || filteredWords.length === 0}
+                  className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                >
+                  {isDownloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin text-primary" /> : <Download className="w-4 h-4 mr-2 text-blue-500" />}
+                  保存 PDF
                 </button>
                 <button onClick={handlePrint} disabled={isPrinting || filteredWords.length === 0} className="bg-primary hover:bg-indigo-700 text-white px-5 py-2 rounded-lg shadow-md flex items-center font-bold transition-all active:scale-95">
                   <Printer className="w-5 h-5 mr-2" /> 打印试卷 (A4)
@@ -128,6 +171,11 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
                 <option value="">全部错题 ({words.length})</option>
                 {availableDates.map(date => (<option key={date} value={date}>{date}</option>))}
             </select>
+            <div className="ml-auto flex gap-2">
+               <button onClick={handleExportJson} className="text-gray-400 hover:text-orange-500 transition-colors p-1" title="导出 JSON 数据备份">
+                  <FileJson className="w-5 h-5" />
+               </button>
+            </div>
         </div>
       </div>
 
@@ -153,7 +201,7 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
                   {questions.pinyin.map((w, idx) => (
                     <div key={idx} className="flex flex-col items-center w-[80px] break-inside-avoid mb-2">
                       <div className="w-full h-8 border-b-2 border-black mb-2 flex items-end justify-center">
-                        <span className="text-[14px] text-gray-700 font-sans mb-1 font-medium"></span> {/* 此处保持空白供学生填写 */}
+                        <span className="text-[14px] text-gray-700 font-sans mb-1 font-medium"></span>
                       </div>
                       <div className="font-serif text-xl font-bold whitespace-nowrap">{w.word}</div>
                     </div>
