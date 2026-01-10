@@ -112,12 +112,18 @@ export default async function handler(req, res) {
     if (type === 'batch-words') {
       parts = [{ text: `你是一个资深的语文教育专家。请分析以下词语：${words.join(', ')}。
       要求：
-      1. 为每个词提供精准的拼音。
-      2. 字义题：提取词中重点单字，生成4个不同定义的选项。
-      3. 辨析题（重点）：每个词必须从以下三种模式中【任选一种】最合适的：
-         - 模式A(SAME_AS_TARGET)：给出一个语境词（如"日益紧密"），让学生从4个含该字的词中选出字义相同的词。
-         - 模式B(SYNONYM_CHOICE)：提供一个含有空格的简短句子，给出该词及其一个近义词（如"日益"和"更加"），让学生选出最合适的。
-         - 模式C(TWO_WAY_COMPARE)：给出两个含有相同字的短语（如"题西林壁"和"小题大做"），判断其中该字的意思是否相同。
+      1. 如果输入是类似 "改善 vs 改变" 或 "改善/改变" 这种词组对：
+         - 强制生成辨析题模式 B (SYNONYM_CHOICE)。
+         - 提供一个选词填空的语境句子。
+         - matchOptions 必须包含且仅包含这两个词。
+         - pinyin 可以提供两个词的组合，如 "gǎi shàn / gǎi biàn"。
+      2. 如果输入是普通单字词：
+         - 为每个词提供精准拼音。
+         - 提取词中重点单字生成释义选择题。
+         - 辨析题从模式A、B、C中选一个最合适的：
+           - A(SAME_AS_TARGET)：给出一个语境词让学生从4个词中选同义词。
+           - B(SYNONYM_CHOICE)：选词填空。
+           - C(TWO_WAY_COMPARE)：对比两个词中同一个字的意思是否相同。
       输出必须严格符合提供的 JSON Schema 格式。` }];
       schema = batchAnalysisSchema;
     } else if (type === 'poem') {

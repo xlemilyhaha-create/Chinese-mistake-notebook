@@ -21,7 +21,7 @@ interface DraftEntry {
 const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
   const [activeTab, setActiveTab] = useState<EntryType>(EntryType.WORD);
   const [inputText, setInputText] = useState('');
-  const [defaultTypes, setDefaultTypes] = useState<QuestionType[]>([QuestionType.PINYIN, QuestionType.DICTATION]);
+  const [defaultTypes, setDefaultTypes] = useState<QuestionType[]>([QuestionType.PINYIN, QuestionType.DICTATION, QuestionType.DEFINITION_MATCH]);
   const [poemInput, setPoemInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<string>('');
@@ -29,68 +29,73 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const getUniqueWords = (text: string) => {
-    return Array.from(new Set(
-      text.split(/[ \n,，、;；]+/).map(w => w.trim()).filter(w => w.length > 0)
-    ));
+    // 允许 A vs B, A/B 这种格式作为整体
+    // 先处理 vs, /, | 分隔符，暂时替换为空格保护
+    const normalized = text.replace(/\s+(vs|VS)\s+/g, ' $1 ')
+                           .replace(/([^\s])(\/|\|)([^\s])/g, '$1 / $3');
+    
+    // 按行或逗号切分
+    const lines = normalized.split(/[\n,，、;；]+/).map(w => w.trim()).filter(w => w.length > 0);
+    
+    const results: string[] = [];
+    lines.forEach(line => {
+      // 如果一行里包含 vs 或 /，视为一个词组
+      if (line.toLowerCase().includes(' vs ') || line.includes('/') || line.includes('和')) {
+        results.push(line);
+      } else {
+        // 否则按空格切分出单个词
+        const parts = line.split(/\s+/).filter(p => p.length > 0);
+        results.push(...parts);
+      }
+    });
+    
+    return Array.from(new Set(results));
   };
 
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
   const performAnalysis = async (wordsToAnalyze: string[]) => {
     if (wordsToAnalyze.length === 0) return;
-    
     setIsProcessing(true);
-    
-    // 保持 3 个一组，这是最稳健的体积
     const CHUNK_SIZE = 3;
     const wordChunks = [];
     for (let i = 0; i < wordsToAnalyze.length; i += CHUNK_SIZE) {
       wordChunks.push(wordsToAnalyze.slice(i, i + CHUNK_SIZE));
     }
-
     let processedCount = 0;
-
     for (const chunk of wordChunks) {
-      // 1. 设置当前批次为分析中
       setDrafts(prev => prev.map(d => chunk.includes(d.word) && d.status !== 'done' ? { ...d, status: 'analyzing', errorMsg: undefined } : d));
       setProcessingStatus(`分析中... (${processedCount}/${wordsToAnalyze.length})`);
-
       try {
         const batchResults = await analyzeWordsBatch(chunk);
-        
-        // 2. 更新结果，并处理“AI漏选”的情况
         setDrafts(prev => prev.map(d => {
-          if (!chunk.includes(d.word)) return d; // 非本批次，不动
-          
+          if (!chunk.includes(d.word)) return d;
           const result = batchResults.find(r => r.word === d.word);
-          
           if (result) {
             let types = [...d.enabledTypes];
-            if (types.includes(QuestionType.DEFINITION) && !result.definitionData) {
-              types = types.filter(t => t !== QuestionType.DEFINITION);
-            }
-            if (types.includes(QuestionType.DEFINITION_MATCH) && !result.definitionMatchData) {
-              types = types.filter(t => t !== QuestionType.DEFINITION_MATCH);
+            // 自动检测哪些考点可用
+            if (!result.definitionData) types = types.filter(t => t !== QuestionType.DEFINITION);
+            if (!result.definitionMatchData) types = types.filter(t => t !== QuestionType.DEFINITION_MATCH);
+            // 如果是近义词对，通常不需要单独考拼音书写，重点是辨析
+            if (d.word.includes(' vs ') || d.word.includes('/')) {
+                // 可选：对于词组自动隐藏注音和书写，只留辨析
+                // types = [QuestionType.DEFINITION_MATCH];
             }
             return { ...d, analysis: result, enabledTypes: types, status: 'done' };
           } else {
-            // AI 没返回这个词的结果，标记为错误而非一直处于 analyzing
             return { ...d, status: 'error', errorMsg: 'AI未返回结果，请重试' };
           }
         }));
       } catch (e: any) {
-        console.error("Chunk failed:", chunk, e);
-        const errorMsg = e.message?.includes('429') ? '服务器繁忙 (Rate Limit)' : '网络异常或分析超时';
+        const errorMsg = e.message?.includes('429') ? '服务器繁忙' : '分析超时';
         setDrafts(prev => prev.map(d => chunk.includes(d.word) && d.status === 'analyzing' ? { ...d, status: 'error', errorMsg } : d));
       }
-      
       processedCount += chunk.length;
       if (processedCount < wordsToAnalyze.length) {
         setProcessingStatus(`休息中... (${processedCount}/${wordsToAnalyze.length})`);
         await delay(4000);
       }
     }
-
     setProcessingStatus('');
     setIsProcessing(false);
   };
@@ -98,7 +103,6 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
   const handleAnalyzeWords = async () => {
     const words = getUniqueWords(inputText);
     if (words.length === 0) return;
-    
     const initialDrafts: DraftEntry[] = words.map(w => ({
       id: crypto.randomUUID(),
       word: w,
@@ -107,7 +111,6 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
       status: 'pending',
       type: EntryType.WORD
     }));
-    
     setDrafts(initialDrafts);
     setInputText('');
     await performAnalysis(words);
@@ -116,7 +119,6 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
   const handleRetryFailed = async () => {
     const failedWords = drafts.filter(d => d.status === 'error').map(d => d.word);
     if (failedWords.length === 0) return;
-    
     setDrafts(prev => prev.map(d => d.status === 'error' ? { ...d, status: 'pending', errorMsg: undefined } : d));
     await performAnalysis(failedWords);
   };
@@ -223,7 +225,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
             <textarea
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder="输入多个字词，用空格或逗号分隔。"
+              placeholder="输入字词，或录入近义词组如 '改善 vs 改变'。"
               className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary outline-none min-h-[100px] resize-y"
             />
             <div className="absolute bottom-3 right-3 flex gap-2">
@@ -275,7 +277,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
                 <div className="flex flex-col gap-1">
                   <h4 className="font-bold text-gray-900 flex items-center gap-2">
                     {draft.word} 
-                    {draft.status === 'done' && <span className="text-primary text-sm font-normal">{draft.analysis?.pinyin}</span>}
+                    {draft.status === 'done' && draft.analysis?.pinyin && <span className="text-primary text-sm font-normal">{draft.analysis.pinyin}</span>}
                     {draft.status === 'done' && <CheckCircle className="w-4 h-4 text-green-500" />}
                   </h4>
                   <div className="flex flex-wrap gap-1 mt-2">
@@ -285,8 +287,8 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
                           <>
                             {['注音', '书写', '释义', '辨析'].map((label, idx) => {
                               const type = [QuestionType.PINYIN, QuestionType.DICTATION, QuestionType.DEFINITION, QuestionType.DEFINITION_MATCH][idx];
-                              const isAvailable = idx < 2 || (idx === 2 && draft.analysis?.definitionData) || (idx === 3 && draft.analysis?.definitionMatchData);
-                              if (!isAvailable) return null;
+                              const isAvailable = (idx < 2 && !draft.word.includes(' vs ')) || (idx === 2 && draft.analysis?.definitionData) || (idx === 3 && draft.analysis?.definitionMatchData);
+                              if (!isAvailable && idx !== 3) return null; // 辨析总是可以尝试开启
                               return <button key={type} onClick={() => toggleEditType(draft.id, type)} className={`px-2 py-0.5 text-[10px] font-bold rounded border transition-colors ${draft.enabledTypes.includes(type) ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}>{label}</button>
                             })}
                           </>
