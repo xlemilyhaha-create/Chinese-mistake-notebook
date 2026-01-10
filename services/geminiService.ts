@@ -3,7 +3,7 @@ import { AnalysisResult, EntryType } from "../types";
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-const analyzeWithGeminiBackend = async (payload: any, retries = 2) => {
+const analyzeWithGeminiBackend = async (payload: any, retries = 3) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 60000); 
 
@@ -17,9 +17,11 @@ const analyzeWithGeminiBackend = async (payload: any, retries = 2) => {
     
     clearTimeout(timeoutId);
 
+    // 针对 429 频率限制进行更长的指数退避重试
     if (response.status === 429 && retries > 0) {
-      console.warn("Rate limited, retrying in 3s...");
-      await delay(3000);
+      const waitTime = (4 - retries) * 5000; // 第一次失败等5秒，第二次等10秒...
+      console.warn(`Rate limited, retrying in ${waitTime/1000}s...`);
+      await delay(waitTime);
       return analyzeWithGeminiBackend(payload, retries - 1);
     }
 
@@ -31,9 +33,9 @@ const analyzeWithGeminiBackend = async (payload: any, retries = 2) => {
     return await response.json();
   } catch (error: any) {
     clearTimeout(timeoutId);
-    if (retries > 0 && (error.name === 'AbortError' || error.message.includes('timeout'))) {
-      console.warn("Request timed out, retrying...");
-      await delay(1000);
+    if (retries > 0 && (error.name === 'AbortError' || error.message.includes('timeout') || error.message.includes('500'))) {
+      console.warn("Request unstable, retrying...");
+      await delay(2000);
       return analyzeWithGeminiBackend(payload, retries - 1);
     }
     throw error;

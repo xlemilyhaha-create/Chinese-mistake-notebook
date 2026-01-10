@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { Loader2, CheckCircle, AlertCircle, Camera, Image as ImageIcon, X, ScrollText, Type, RefreshCw } from 'lucide-react';
+import { Loader2, CheckCircle, AlertCircle, Camera, Image as ImageIcon, X, ScrollText, Type, RefreshCw, Info } from 'lucide-react';
 import { analyzeWordsBatch, extractWordsFromImage, analyzePoem } from '../services/geminiService';
 import { WordEntry, QuestionType, AnalysisResult, EntryType, TestStatus } from '../types';
 
@@ -14,6 +14,7 @@ interface DraftEntry {
   analysis: AnalysisResult | null;
   enabledTypes: QuestionType[];
   status: 'pending' | 'analyzing' | 'done' | 'error';
+  errorMsg?: string;
   type: EntryType;
 }
 
@@ -35,13 +36,13 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
 
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-  // 核心批量分析逻辑
   const performAnalysis = async (wordsToAnalyze: string[]) => {
     if (wordsToAnalyze.length === 0) return;
     
     setIsProcessing(true);
     
-    const CHUNK_SIZE = 5;
+    // 极致减小分块：3个一组，降低单个响应体积和超时风险
+    const CHUNK_SIZE = 3;
     const wordChunks = [];
     for (let i = 0; i < wordsToAnalyze.length; i += CHUNK_SIZE) {
       wordChunks.push(wordsToAnalyze.slice(i, i + CHUNK_SIZE));
@@ -50,8 +51,8 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     let processedCount = 0;
 
     for (const chunk of wordChunks) {
-      setDrafts(prev => prev.map(d => chunk.includes(d.word) && d.status !== 'done' ? { ...d, status: 'analyzing' } : d));
-      setProcessingStatus(`正在分析... (${processedCount}/${wordsToAnalyze.length})`);
+      setDrafts(prev => prev.map(d => chunk.includes(d.word) && d.status !== 'done' ? { ...d, status: 'analyzing', errorMsg: undefined } : d));
+      setProcessingStatus(`正在深度分析... (${processedCount}/${wordsToAnalyze.length})`);
 
       try {
         const batchResults = await analyzeWordsBatch(chunk);
@@ -70,14 +71,17 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
 
           return { ...d, analysis: result, enabledTypes: types, status: 'done' };
         }));
-      } catch (e) {
+      } catch (e: any) {
         console.error("Chunk failed:", chunk, e);
-        setDrafts(prev => prev.map(d => chunk.includes(d.word) && d.status === 'analyzing' ? { ...d, status: 'error' } : d));
+        const errorMsg = e.message?.includes('429') ? '服务器繁忙 (Rate Limit)' : '分析超时/失败';
+        setDrafts(prev => prev.map(d => chunk.includes(d.word) && d.status === 'analyzing' ? { ...d, status: 'error', errorMsg } : d));
       }
       
       processedCount += chunk.length;
       if (processedCount < wordsToAnalyze.length) {
-        await delay(2000); // 批次间强制等待 2 秒
+        // 关键控制：间隔延长至 4000ms，严格遵守每分钟 15 次请求的免费额度
+        setProcessingStatus(`休息中，避开频率限制... (${processedCount}/${wordsToAnalyze.length})`);
+        await delay(4000);
       }
     }
 
@@ -107,8 +111,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     const failedWords = drafts.filter(d => d.status === 'error').map(d => d.word);
     if (failedWords.length === 0) return;
     
-    // 重置这些项的状态
-    setDrafts(prev => prev.map(d => d.status === 'error' ? { ...d, status: 'pending' } : d));
+    setDrafts(prev => prev.map(d => d.status === 'error' ? { ...d, status: 'pending', errorMsg: undefined } : d));
     await performAnalysis(failedWords);
   };
 
@@ -283,11 +286,14 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
                         )}
                       </>
                     ) : (
-                      <span className="text-xs flex items-center text-gray-400">
-                        {draft.status === 'analyzing' && <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> 分析中...</>}
-                        {draft.status === 'pending' && '等待中'}
-                        {draft.status === 'error' && <><AlertCircle className="w-3 h-3 mr-1 text-red-500" /> 分析失败</>}
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        <span className="text-xs flex items-center text-gray-400">
+                          {draft.status === 'analyzing' && <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> 分析中...</>}
+                          {draft.status === 'pending' && '等待中'}
+                          {draft.status === 'error' && <><AlertCircle className="w-3 h-3 mr-1 text-red-500" /> 分析失败</>}
+                        </span>
+                        {draft.errorMsg && <span className="text-[10px] text-red-400 flex items-center"><Info className="w-2.5 h-2.5 mr-1" /> {draft.errorMsg}</span>}
+                      </div>
                     )}
                   </div>
                 </div>
