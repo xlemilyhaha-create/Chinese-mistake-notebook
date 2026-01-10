@@ -92,26 +92,29 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
       </div>
 
       <div className="flex-1 overflow-auto bg-gray-100 p-8 flex justify-center">
-        <div id="printable-root">
-          <div className="bg-white shadow-lg w-[210mm] min-h-[297mm] mx-auto p-[20mm] box-border relative mb-8">
-            <div className="text-center border-b-2 border-black pb-4 mb-8 section-title">
+        <div id="printable-root" className="relative">
+          {/* 打印时的页脚页码 (CSS中已设置其样式) */}
+          <div className="page-footer hidden print:block"></div>
+
+          <div className="bg-white shadow-lg w-[210mm] min-h-[297mm] mx-auto p-[15mm] box-border relative mb-8">
+            <div className="text-center border-b-2 border-black pb-4 mb-6 section-title">
               <h1 className="text-2xl font-bold font-serif tracking-widest mb-2">语文错题专项综合练习</h1>
-              <div className="flex justify-between text-sm mt-4 font-kai"><span>姓名: __________</span><span>日期: {selectedDate || new Date().toLocaleDateString('zh-CN')}</span><span>得分: __________</span></div>
+              <div className="flex justify-between text-sm mt-4 font-kai px-4"><span>姓名: __________</span><span>日期: {selectedDate || new Date().toLocaleDateString('zh-CN')}</span><span>得分: __________</span></div>
             </div>
 
             {questions.pinyin.length > 0 && (
-              <div className="mb-8">
-                <h2 className="text-lg font-bold mb-6 font-kai flex items-center section-title"><span className="bg-black text-white w-6 h-6 rounded-full flex items-center justify-center text-sm mr-2">1</span>看汉字，写拼音</h2>
-                <div className="flex flex-wrap gap-x-8 gap-y-8">
-                  {questions.pinyin.map((w, idx) => (<div key={idx} className="flex flex-col items-center question-item w-[calc(25%-1.5rem)] min-w-[120px]"><div className="w-full h-8 border-b border-gray-400 relative"></div><div className="font-serif text-xl mt-2 tracking-widest text-center">{w.word}</div></div>))}
+              <div className="mb-6">
+                <h2 className="text-md font-bold mb-4 font-kai flex items-center section-title"><span className="bg-black text-white w-5 h-5 rounded-full flex items-center justify-center text-xs mr-2">1</span>看汉字，写拼音</h2>
+                <div className="flex flex-wrap gap-x-8 gap-y-6">
+                  {questions.pinyin.map((w, idx) => (<div key={idx} className="flex flex-col items-center question-item w-[calc(25%-1.5rem)] min-w-[110px]"><div className="w-full h-7 border-b border-gray-400 relative"></div><div className="font-serif text-lg mt-1 tracking-widest text-center">{w.word}</div></div>))}
                 </div>
               </div>
             )}
 
             {questions.dictation.length > 0 && (
-               <div className="mb-8">
-               <h2 className="text-lg font-bold mb-6 font-kai flex items-center section-title"><span className="bg-black text-white w-6 h-6 rounded-full flex items-center justify-center text-sm mr-2">2</span>看拼音，写词语</h2>
-               <div className="flex flex-wrap gap-x-6 gap-y-10">
+               <div className="mb-6">
+               <h2 className="text-md font-bold mb-4 font-kai flex items-center section-title"><span className="bg-black text-white w-5 h-5 rounded-full flex items-center justify-center text-xs mr-2">2</span>看拼音，写词语</h2>
+               <div className="flex flex-wrap gap-x-4 gap-y-8">
                  {questions.dictation.map((w, idx) => (
                    <div key={idx} className="question-item">{renderPinyinBoxes(w)}</div>
                  ))}
@@ -120,15 +123,15 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
             )}
 
             {questions.poemFill.length > 0 && (
-              <div className="mb-8">
-                <h2 className="text-lg font-bold mb-6 font-kai flex items-center section-title"><span className="bg-black text-white w-6 h-6 rounded-full flex items-center justify-center text-sm mr-2">3</span>古诗文默写</h2>
-                <div className="space-y-4">
+              <div className="mb-6">
+                <h2 className="text-md font-bold mb-4 font-kai flex items-center section-title"><span className="bg-black text-white w-5 h-5 rounded-full flex items-center justify-center text-xs mr-2">3</span>古诗文默写</h2>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-4">
                   {questions.poemFill.map((w, idx) => (
-                    <div key={idx} className="question-item bg-gray-50 p-4 rounded border border-gray-100">
-                      <div className="font-bold mb-2 font-kai">{idx + 1}. {w.word} ({w.poemData?.dynasty} · {w.poemData?.author})</div>
+                    <div key={idx} className="question-item border border-gray-100 p-2 rounded bg-gray-50/30">
+                      <div className="font-bold text-xs mb-1 font-kai text-gray-600">{idx + 1}. 《{w.word}》</div>
                       <div className="space-y-1">
                         {w.poemData?.fillAnswers.map((fill, fIdx) => (
-                           <div key={fIdx} className="font-serif text-lg leading-loose">{fill.pre}<span className="inline-block border-b border-black min-w-[80px] text-center px-2 text-transparent select-none">{fill.answer}</span>{fill.post}</div>
+                           <div key={fIdx} className="font-serif text-sm leading-relaxed">{fill.pre}<span className="inline-block border-b border-black min-w-[50px] text-center px-1 text-transparent select-none">{fill.answer}</span>{fill.post}</div>
                         ))}
                       </div>
                     </div>
@@ -137,19 +140,19 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
               </div>
             )}
 
-            {/* 新增：词语释义考点 */}
+            {/* 优化：词语释义采用双栏排版 */}
             {questions.definition.length > 0 && (
-              <div className="mb-8">
-                <h2 className="text-lg font-bold mb-6 font-kai flex items-center section-title"><span className="bg-black text-white w-6 h-6 rounded-full flex items-center justify-center text-sm mr-2">4</span>词语释义选择</h2>
-                <div className="space-y-6">
+              <div className="mb-6">
+                <h2 className="text-md font-bold mb-4 font-kai flex items-center section-title"><span className="bg-black text-white w-5 h-5 rounded-full flex items-center justify-center text-xs mr-2">4</span>词语释义选择</h2>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-4">
                   {questions.definition.map((w, idx) => (
                     <div key={idx} className="question-item">
-                      <div className="font-serif text-base mb-2">
-                        {idx + 1}. 给“<span className="font-bold underline">{w.word}</span>”中的“<span className="text-lg font-bold">{w.definitionData?.targetChar}</span>”选择正确的解释：（ &nbsp;&nbsp;&nbsp;&nbsp; ）
+                      <div className="font-serif text-sm mb-1 leading-tight">
+                        {idx + 1}. “<span className="font-bold underline">{w.word}</span>”中“<span className="font-bold">{w.definitionData?.targetChar}</span>”的意思是：（ &nbsp; ）
                       </div>
-                      <div className="grid grid-cols-2 gap-x-12 gap-y-2 pl-4 text-sm font-kai">
+                      <div className="grid grid-cols-1 gap-0.5 pl-3 text-[11px] font-kai text-gray-700">
                         {w.definitionData?.options.map((opt, oIdx) => (
-                          <div key={oIdx} className="flex"><span className="mr-2 font-bold">{String.fromCharCode(65 + oIdx)}.</span><span>{opt}</span></div>
+                          <div key={oIdx} className="flex"><span className="mr-1 font-bold">{String.fromCharCode(65 + oIdx)}.</span><span>{opt}</span></div>
                         ))}
                       </div>
                     </div>
@@ -159,56 +162,52 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
             )}
 
             {questions.definitionMatch.length > 0 && (
-               <div className="mb-8">
-               <h2 className="text-lg font-bold mb-6 font-kai flex items-center section-title"><span className="bg-black text-white w-6 h-6 rounded-full flex items-center justify-center text-sm mr-2">5</span>字词辨析</h2>
-               <div className="space-y-6">
+               <div className="mb-6">
+               <h2 className="text-md font-bold mb-4 font-kai flex items-center section-title"><span className="bg-black text-white w-5 h-5 rounded-full flex items-center justify-center text-xs mr-2">5</span>字词辨析</h2>
+               <div className="space-y-4">
                  {questions.definitionMatch.map((w, idx) => {
                    const m = w.definitionMatchData!;
                    return (
                     <div key={idx} className="question-item">
-                      {/* 模式 A：SAME_AS_TARGET (图一) */}
                       {m.mode === MatchMode.SAME_AS_TARGET && (
-                        <>
-                          <div className="font-serif text-base mb-2">
-                            {idx + 1}. 与“<span className="font-bold underline">{m.context || w.word}</span>”里的“<span className="text-lg font-bold">{m.targetChar}</span>”意思相近的词是：（ &nbsp;&nbsp;&nbsp;&nbsp; ）
+                        <div className="grid grid-cols-2 gap-4 items-start">
+                          <div className="font-serif text-sm leading-tight">
+                            {idx + 1}. 与“<span className="font-bold underline">{m.context || w.word}</span>”中“<span className="font-bold">{m.targetChar}</span>”意思相近的是：（ &nbsp; ）
                           </div>
-                          <div className="grid grid-cols-2 gap-2 pl-4 text-sm font-kai">
+                          <div className="grid grid-cols-2 gap-x-2 text-[11px] font-kai">
                             {m.options?.map((opt, oIdx) => (
-                              <div key={oIdx} className="flex"><span className="mr-2 font-bold">{String.fromCharCode(65 + oIdx)}.</span><span>{opt}</span></div>
+                              <div key={oIdx} className="flex"><span className="mr-1 font-bold">{String.fromCharCode(65 + oIdx)}.</span><span>{opt}</span></div>
                             ))}
                           </div>
-                        </>
+                        </div>
                       )}
-                      {/* 模式 B：SYNONYM_CHOICE */}
                       {m.mode === MatchMode.SYNONYM_CHOICE && (
-                         <>
-                          <div className="font-serif text-base mb-2">
-                            {idx + 1}. 选词填空。在句子中填入最恰当的词语：（ &nbsp;&nbsp;&nbsp;&nbsp; ）
+                         <div className="bg-gray-50 p-2 rounded">
+                          <div className="font-serif text-sm mb-1">
+                            {idx + 1}. 选词填空：（ &nbsp; ）
                           </div>
-                          <div className="mb-2 italic bg-gray-50 p-2 font-serif">{m.context}</div>
-                          <div className="grid grid-cols-2 gap-2 pl-4 text-sm font-kai">
+                          <div className="mb-1 text-sm font-serif text-gray-600">“{m.context}”</div>
+                          <div className="flex gap-4 pl-4 text-[11px] font-kai">
                             {m.options?.slice(0, 2).map((opt, oIdx) => (
-                              <div key={oIdx} className="flex"><span className="mr-2 font-bold">{String.fromCharCode(65 + oIdx)}.</span><span>{opt}</span></div>
+                              <div key={oIdx} className="flex"><span className="mr-1 font-bold">{String.fromCharCode(65 + oIdx)}.</span><span>{opt}</span></div>
                             ))}
                           </div>
-                        </>
+                        </div>
                       )}
-                      {/* 模式 C：TWO_WAY_COMPARE (图二) */}
                       {m.mode === MatchMode.TWO_WAY_COMPARE && (
-                        <>
-                          <div className="font-serif text-base mb-2">
-                            {idx + 1}. 判断下面两个词语中“<span className="text-lg font-bold">{m.targetChar}</span>”的意思是否相同：（ &nbsp;&nbsp;&nbsp;&nbsp; ）
+                        <div className="flex items-center justify-between border-l-2 border-gray-100 pl-3">
+                          <div className="font-serif text-sm">
+                            {idx + 1}. 判断“<span className="font-bold">{m.targetChar}</span>”意思是否相同：（ &nbsp; ）
                           </div>
-                          <div className="flex justify-center items-center gap-8 py-2 font-serif text-lg bg-gray-50 rounded">
-                             <div className="border-b-2 border-primary px-2">{m.compareWordA}</div>
-                             <div className="text-gray-400">vs</div>
-                             <div className="border-b-2 border-secondary px-2">{m.compareWordB}</div>
+                          <div className="flex gap-4 font-serif text-sm items-center">
+                             <div className="bg-gray-100 px-2 rounded">{m.compareWordA}</div>
+                             <div className="text-gray-300">/</div>
+                             <div className="bg-gray-100 px-2 rounded">{m.compareWordB}</div>
+                             <div className="flex gap-3 ml-2 text-xs font-kai">
+                                <span>A.同</span><span>B.异</span>
+                             </div>
                           </div>
-                          <div className="flex justify-center gap-12 mt-2 text-sm font-kai">
-                             <div className="flex items-center"><span className="mr-2 font-bold">A.</span>相同</div>
-                             <div className="flex items-center"><span className="mr-2 font-bold">B.</span>不同</div>
-                          </div>
-                        </>
+                        </div>
                       )}
                     </div>
                    );
@@ -217,22 +216,22 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
              </div>
             )}
 
-            {/* 新增：古诗释义考点 */}
+            {/* 优化：古诗释义采用紧凑布局 */}
             {questions.poemDef.length > 0 && (
-              <div className="mb-8">
-                <h2 className="text-lg font-bold mb-6 font-kai flex items-center section-title"><span className="bg-black text-white w-6 h-6 rounded-full flex items-center justify-center text-sm mr-2">6</span>古诗重点字释义</h2>
-                <div className="space-y-6">
+              <div className="mb-6">
+                <h2 className="text-md font-bold mb-4 font-kai flex items-center section-title"><span className="bg-black text-white w-5 h-5 rounded-full flex items-center justify-center text-xs mr-2">6</span>古诗重点字释义</h2>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-4">
                   {questions.poemDef.map((w, idx) => (
-                    <div key={idx} className="question-item">
-                      <div className="font-bold mb-1 font-kai text-gray-700">来自《{w.word}》:</div>
+                    <div key={idx} className="question-item border-l-2 border-primary/10 pl-2">
+                      <div className="font-bold text-[10px] text-gray-400 mb-1">《{w.word}》</div>
                       {w.poemData?.definitionQuestions.map((q, qIdx) => (
-                        <div key={qIdx} className="mb-4 pl-4 border-l-2 border-gray-100">
-                          <div className="font-serif text-base mb-2">
-                             句中“<span className="font-bold underline">{w.poemData?.lines[q.lineIndex]}</span>”的“<span className="text-lg font-bold">{q.targetChar}</span>”意思是：（ &nbsp;&nbsp;&nbsp;&nbsp; ）
+                        <div key={qIdx} className="mb-2">
+                          <div className="font-serif text-sm mb-1 leading-tight">
+                             “{w.poemData?.lines[q.lineIndex]}”中“<span className="font-bold">{q.targetChar}</span>”指：（ &nbsp; ）
                           </div>
-                          <div className="grid grid-cols-2 gap-2 text-sm font-kai">
+                          <div className="grid grid-cols-2 gap-1 text-[10px] font-kai text-gray-600">
                             {q.options.map((opt, oIdx) => (
-                              <div key={oIdx} className="flex"><span className="mr-2 font-bold">{String.fromCharCode(65 + oIdx)}.</span><span>{opt}</span></div>
+                              <div key={oIdx} className="flex"><span className="mr-1 font-bold">{String.fromCharCode(65 + oIdx)}.</span><span>{opt}</span></div>
                             ))}
                           </div>
                         </div>
@@ -243,35 +242,35 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
               </div>
             )}
 
-            <div className="mt-12 text-center text-gray-300 text-xs no-print">Generated by Yuwen Cuoti Helper - Exam Page</div>
+            <div className="mt-8 text-center text-gray-300 text-[10px] no-print">Generated by Yuwen Cuoti Helper</div>
           </div>
 
           <div className="print-break-before"></div>
 
-          <div className="bg-white shadow-lg w-[210mm] min-h-[297mm] mx-auto p-[20mm] box-border relative">
+          {/* 答案页同样显示页脚 */}
+          <div className="bg-white shadow-lg w-[210mm] min-h-[297mm] mx-auto p-[15mm] box-border relative">
             <div className="text-center border-b-2 border-black pb-4 mb-8 section-title">
               <h1 className="text-xl font-bold font-serif tracking-widest mb-2">参考答案与解析</h1>
             </div>
 
              {questions.pinyin.length > 0 && (
-              <div className="mb-6"><h3 className="font-bold text-md mb-2 bg-gray-100 p-1">1. 看汉字写拼音</h3><div className="grid grid-cols-3 gap-2 text-sm">{questions.pinyin.map((w, idx) => (<div key={idx} className="flex gap-2"><span className="font-bold">{w.word}:</span><span className="text-primary">{w.pinyin}</span></div>))}</div></div>
+              <div className="mb-6"><h3 className="font-bold text-sm mb-2 bg-gray-50 p-1 px-2 border-l-4 border-black">1. 看汉字写拼音</h3><div className="grid grid-cols-4 gap-2 text-xs">{questions.pinyin.map((w, idx) => (<div key={idx} className="flex gap-2"><span className="font-bold">{w.word}:</span><span className="text-primary">{w.pinyin}</span></div>))}</div></div>
              )}
              {questions.dictation.length > 0 && (
-              <div className="mb-6"><h3 className="font-bold text-md mb-2 bg-gray-100 p-1">2. 看拼音写词语</h3><div className="grid grid-cols-3 gap-2 text-sm">{questions.dictation.map((w, idx) => (<div key={idx} className="flex gap-2"><span className="text-gray-500">{w.pinyin}:</span><span className="font-bold text-primary">{w.word}</span></div>))}</div></div>
+              <div className="mb-6"><h3 className="font-bold text-sm mb-2 bg-gray-50 p-1 px-2 border-l-4 border-black">2. 看拼音写词语</h3><div className="grid grid-cols-4 gap-2 text-xs">{questions.dictation.map((w, idx) => (<div key={idx} className="flex gap-2"><span className="text-gray-500">{w.pinyin}:</span><span className="font-bold text-primary">{w.word}</span></div>))}</div></div>
              )}
              {questions.poemFill.length > 0 && (
-              <div className="mb-6"><h3 className="font-bold text-md mb-2 bg-gray-100 p-1">3. 古诗文默写</h3><ul className="list-disc pl-5 text-sm space-y-1">{questions.poemFill.map((w, idx) => (<li key={idx}><span className="font-bold mr-2">{w.word}:</span>{w.poemData?.fillAnswers.map(f => f.answer).join(' / ')}</li>))}</ul></div>
+              <div className="mb-6"><h3 className="font-bold text-sm mb-2 bg-gray-50 p-1 px-2 border-l-4 border-black">3. 古诗文默写</h3><div className="grid grid-cols-2 gap-2 text-xs">{questions.poemFill.map((w, idx) => (<div key={idx}><span className="font-bold mr-2">{w.word}:</span><span className="text-gray-700">{w.poemData?.fillAnswers.map(f => f.answer).join(' / ')}</span></div>))}</div></div>
              )}
              
-             {/* 答案：词语释义 */}
              {questions.definition.length > 0 && (
               <div className="mb-6">
-                <h3 className="font-bold text-md mb-2 bg-gray-100 p-1">4. 词语释义答案</h3>
-                <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-sm">
+                <h3 className="font-bold text-sm mb-2 bg-gray-50 p-1 px-2 border-l-4 border-black">4. 词语释义答案</h3>
+                <div className="grid grid-cols-4 gap-2 text-xs">
                   {questions.definition.map((w, idx) => (
-                    <div key={idx} className="flex gap-2">
+                    <div key={idx}>
                       <span className="font-bold">{idx+1}.</span>
-                      <span>{String.fromCharCode(65 + (w.definitionData?.correctIndex || 0))} ({w.definitionData?.options[w.definitionData?.correctIndex || 0]})</span>
+                      <span className="ml-1">{String.fromCharCode(65 + (w.definitionData?.correctIndex || 0))}</span>
                     </div>
                   ))}
                 </div>
@@ -279,17 +278,17 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
              )}
 
              {questions.definitionMatch.length > 0 && (
-              <div className="mb-6"><h3 className="font-bold text-md mb-2 bg-gray-100 p-1">5. 字词辨析答案</h3>
-                <div className="space-y-2 text-sm">
+              <div className="mb-6"><h3 className="font-bold text-sm mb-2 bg-gray-50 p-1 px-2 border-l-4 border-black">5. 字词辨析答案</h3>
+                <div className="grid grid-cols-4 gap-2 text-xs">
                   {questions.definitionMatch.map((w, idx) => {
                     const m = w.definitionMatchData!;
                     let ansStr = "";
                     if (m.mode === MatchMode.TWO_WAY_COMPARE) ansStr = m.isSame ? "A (相同)" : "B (不同)";
-                    else ansStr = `${String.fromCharCode(65 + (m.correctIndex || 0))} (${m.options?.[m.correctIndex || 0]})`;
+                    else ansStr = String.fromCharCode(65 + (m.correctIndex || 0));
                     return (
-                      <div key={idx} className="flex gap-2">
+                      <div key={idx}>
                         <span className="font-bold">{idx+1}.</span>
-                        <span>{ansStr}</span>
+                        <span className="ml-1">{ansStr}</span>
                       </div>
                     );
                   })}
@@ -297,18 +296,17 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
               </div>
              )}
 
-             {/* 答案：古诗释义 */}
              {questions.poemDef.length > 0 && (
               <div className="mb-6">
-                <h3 className="font-bold text-md mb-2 bg-gray-100 p-1">6. 古诗重点字释义答案</h3>
-                <div className="space-y-2 text-sm">
+                <h3 className="font-bold text-sm mb-2 bg-gray-50 p-1 px-2 border-l-4 border-black">6. 古诗重点字释义答案</h3>
+                <div className="grid grid-cols-2 gap-4 text-xs">
                   {questions.poemDef.map((w, idx) => (
-                    <div key={idx} className="mb-2">
-                      <div className="font-bold text-gray-500">《{w.word}》:</div>
+                    <div key={idx} className="border-b border-dashed border-gray-100 pb-1">
+                      <span className="font-bold text-gray-400 mr-2">《{w.word}》:</span>
                       {w.poemData?.definitionQuestions.map((q, qIdx) => (
-                        <div key={qIdx} className="ml-4">
-                           - {q.targetChar}: {String.fromCharCode(65 + q.correctIndex)} ({q.options[q.correctIndex]})
-                        </div>
+                        <span key={qIdx} className="mr-3">
+                           {q.targetChar}: {String.fromCharCode(65 + q.correctIndex)}
+                        </span>
                       ))}
                     </div>
                   ))}
