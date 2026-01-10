@@ -89,10 +89,12 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
       <div className="flex gap-1 justify-center break-inside-avoid">
         {chars.map((char, idx) => (
           <div key={idx} className="flex flex-col items-center">
-             <div className="h-6 flex items-end justify-center w-12 text-center overflow-visible">
-               <span className="text-[10px] text-gray-400 font-sans leading-none">{isAligned ? pinyinParts[idx] : (idx === 0 ? entry.pinyin : '')}</span>
+             <div className="h-7 flex items-end justify-center w-10 text-center overflow-visible">
+               <span className="text-[14px] text-gray-700 font-sans leading-none font-medium">
+                 {isAligned ? pinyinParts[idx] : (idx === 0 ? entry.pinyin : '')}
+               </span>
              </div>
-             <div className="w-12 h-12 border border-black relative bg-white">
+             <div className="w-10 h-10 border border-black relative bg-white">
                 <div className="absolute inset-0 border-t border-dashed border-gray-300 top-1/2"></div>
                 <div className="absolute inset-0 border-l border-dashed border-gray-300 left-1/2"></div>
              </div>
@@ -150,7 +152,9 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
                 <div className="flex flex-wrap gap-x-12 gap-y-10 pl-4">
                   {questions.pinyin.map((w, idx) => (
                     <div key={idx} className="flex flex-col items-center w-[80px] break-inside-avoid mb-2">
-                      <div className="w-full h-8 border-b-2 border-black mb-2"></div>
+                      <div className="w-full h-8 border-b-2 border-black mb-2 flex items-end justify-center">
+                        <span className="text-[14px] text-gray-700 font-sans mb-1 font-medium"></span> {/* 此处保持空白供学生填写 */}
+                      </div>
                       <div className="font-serif text-xl font-bold whitespace-nowrap">{w.word}</div>
                     </div>
                   ))}
@@ -181,11 +185,11 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
                     return (
                       <div key={idx} className="question-item">
                         <div className="text-base font-bold text-gray-600 mb-4 font-kai">《{w.word}》：</div>
-                        <div className="space-y-8 border-l-2 border-gray-100 pl-6">
+                        <div className="space-y-6 border-l-2 border-gray-100 pl-6">
                           {uniqueLines.map((fill, fIdx) => (
-                             <div key={fIdx} className="font-serif text-xl leading-[2.5]">
+                             <div key={fIdx} className="font-serif text-lg leading-[2.2]">
                                {fill.pre}
-                               <span className="inline-block border-b-2 border-black min-w-[240px] mx-2 text-transparent select-none">此处填空内容</span>
+                               <span className="inline-block border-b-2 border-black min-w-[180px] mx-2 text-transparent select-none">此处填空</span>
                                {fill.post}
                              </div>
                           ))}
