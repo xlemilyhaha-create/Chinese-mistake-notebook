@@ -23,20 +23,20 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
   const [defaultTypes, setDefaultTypes] = useState<QuestionType[]>([QuestionType.PINYIN, QuestionType.DICTATION]);
   const [poemInput, setPoemInput] = useState('');
   const [showCameraModal, setShowCameraModal] = useState(false);
-  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<string>('');
   const [drafts, setDrafts] = useState<DraftEntry[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const getUniqueWords = (text: string) => {
     return Array.from(new Set(
       text.split(/[ \n,，、;；]+/).map(w => w.trim()).filter(w => w.length > 0)
     ));
   };
+
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
   const handleAnalyzeWords = async () => {
     const words = getUniqueWords(inputText);
@@ -57,8 +57,8 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     setDrafts(initialDrafts);
     setInputText('');
 
-    // 分块处理：每 10 个词一组发送一个请求
-    const CHUNK_SIZE = 10;
+    // 减小分块大小：由 10 改为 5，以降低超时风险并适应 API 速率限制
+    const CHUNK_SIZE = 5;
     const wordChunks = [];
     for (let i = 0; i < words.length; i += CHUNK_SIZE) {
       wordChunks.push(words.slice(i, i + CHUNK_SIZE));
@@ -93,6 +93,11 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
       }
       
       processedCount += chunk.length;
+      
+      // 关键改进：在批次之间引入 1.5 秒延迟，防止触发 API 速率限制
+      if (processedCount < words.length) {
+        await delay(1500);
+      }
     }
 
     setProcessingStatus('');
@@ -204,7 +209,6 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
             <div className="absolute bottom-3 right-3 flex gap-2">
               <button onClick={() => fileInputRef.current?.click()} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 transition-colors"><ImageIcon className="w-5 h-5" /></button>
               <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
-              <button onClick={() => setShowCameraModal(true)} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 transition-colors"><Camera className="w-5 h-5" /></button>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-4 mb-4">
@@ -239,7 +243,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
             <h3 className="text-md font-semibold text-gray-700">识别结果 ({drafts.length})</h3>
             <button onClick={handleSaveAll} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center shadow-sm"><CheckCircle className="w-4 h-4 mr-2" /> 确认添加全部</button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-2">
             {drafts.map((draft) => (
               <div key={draft.id} className="bg-gray-50 rounded-lg p-4 border border-gray-200 relative group">
                 <button onClick={() => setDrafts(prev => prev.filter(d => d.id !== draft.id))} className="absolute top-2 right-2 text-gray-400 hover:text-red-500"><X className="w-4 h-4" /></button>

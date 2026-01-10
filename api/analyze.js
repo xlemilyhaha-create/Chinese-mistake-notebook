@@ -106,7 +106,12 @@ export default async function handler(req, res) {
     let schema = null;
 
     if (type === 'batch-words') {
-      parts = [{ text: `Analyze the following Chinese words/idioms: ${words.join(', ')}. For each word, provide pinyin, a definition multiple choice question, and a character usage match question. Return an array of results.` }];
+      parts = [{ text: `你是一个专业的语文老师。请逐一分析以下词语或成语：${words.join(', ')}。
+      要求：
+      1. 为每个词提供准确的拼音。
+      2. 生成一道考察词中重点单字含义的选择题（4个选项，指定正确项索引）。
+      3. 生成一道“字义辨析题”：给出一个含有相同重点单字的4个不同词语，其中一个词语里该字的含义必须与原词相同。
+      4. 请确保输出结果是一个完整的 JSON 数组，包含所有请求的词语，不要截断。` }];
       schema = batchAnalysisSchema;
     } else if (type === 'poem') {
       parts = [{ text: `Analyze poem "${text}". JSON output: title, author, fill questions, definition questions.` }];
