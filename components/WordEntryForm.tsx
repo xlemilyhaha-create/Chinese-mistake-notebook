@@ -86,8 +86,8 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
       }
       processedCount++;
       if (processedCount < wordsToAnalyze.length) {
-        setProcessingStatus(`AI 正在休息... (${processedCount}/${wordsToAnalyze.length})`);
-        await delay(5000); 
+        setProcessingStatus(`正在准备下一个... (${processedCount}/${wordsToAnalyze.length})`);
+        await delay(3000); 
       }
     }
     setIsProcessing(false);
@@ -257,6 +257,13 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-md font-bold text-gray-800">识别进度 ({finishedItemsCount}/{drafts.length})</h3>
             <div className="flex gap-2">
+              <button 
+                onClick={handleRetryFailed} 
+                className="text-primary hover:text-indigo-700 px-3 py-1 text-sm font-bold flex items-center transition-colors disabled:opacity-50"
+                disabled={isProcessing || drafts.every(d => d.status !== 'error')}
+              >
+                <RefreshCw className="w-3.5 h-3.5 mr-1" /> 重试失败项
+              </button>
               <button onClick={handleSaveAll} disabled={isProcessing || finishedItemsCount === 0} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center shadow-sm disabled:opacity-50"><CheckCircle className="w-4 h-4 mr-2" /> 确认入库</button>
             </div>
           </div>
@@ -304,7 +311,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
                         <span className="text-xs flex items-center text-gray-500 font-medium">
                           {draft.status === 'analyzing' && <><Loader2 className="w-3 h-3 mr-1.5 animate-spin text-primary" /> 正在深度学习词义...</>}
                           {draft.status === 'pending' && <span className="text-gray-400">队列排队中</span>}
-                          {draft.status === 'error' && <><AlertCircle className="w-3 h-3 mr-1.5 text-red-500" /> 分析中断</>}
+                          {draft.status === 'error' && <><AlertCircle className="w-3 h-3 mr-1.5 text-red-500" /> {draft.errorMsg || '分析中断'}</>}
                         </span>
                       </div>
                     )}
