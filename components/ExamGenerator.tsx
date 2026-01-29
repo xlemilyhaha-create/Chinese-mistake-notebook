@@ -324,10 +324,11 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
             )}
           </div>
 
-          <div className="print-break-before"></div>
-
-          {/* 答案页 */}
-          <div className="bg-white shadow-lg w-[210mm] min-h-[297mm] mx-auto p-[20mm] box-border relative text-black print:shadow-none print:w-full print:m-0">
+          {/* 答案页 - 强制分页 */}
+          <div 
+            className="bg-white shadow-lg w-[210mm] min-h-[297mm] mx-auto p-[20mm] box-border relative text-black print:shadow-none print:w-full print:m-0"
+            style={{ pageBreakBefore: 'always', breakBefore: 'page' }}
+          >
             <div className="text-center border-b-2 border-black pb-4 mb-10">
               <h1 className="text-xl font-bold font-serif tracking-widest">参考答案与解析</h1>
             </div>
