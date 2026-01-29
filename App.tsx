@@ -200,7 +200,7 @@ const App: React.FC = () => {
   }
 
   if (currentView === View.REVIEW) {
-    return <ReviewFlashcards words={words} onBack={() => setCurrentView(View.HOME)} />;
+    return <ReviewFlashcards words={words} onBack={() => setCurrentView(View.HOME)} onUpdate={handleUpdateWord} />;
   }
 
   return (

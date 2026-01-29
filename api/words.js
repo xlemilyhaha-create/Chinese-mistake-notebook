@@ -82,6 +82,11 @@ export default async function handler(req, res) {
           fields.push('passed_after_retries = ?');
           values.push(updates.passedAfterRetries ? 1 : 0);
         }
+        // 新增：支持更新释义数据（含例句）
+        if (updates.definitionData !== undefined) {
+          fields.push('definition_data = ?');
+          values.push(JSON.stringify(updates.definitionData));
+        }
 
         if (fields.length === 0) return res.status(200).json({ message: "No updates" });
 
