@@ -50,6 +50,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     if (wordsToAnalyze.length === 0) return;
     setIsProcessing(true);
     let processedCount = 0;
+    let stoppedEarly = false;
     
     for (const word of wordsToAnalyze) {
       setDrafts(prev => prev.map(d => d.word === word && d.status !== 'done' ? { ...d, status: 'analyzing', errorMsg: undefined } : d));
@@ -73,6 +74,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
         setDrafts(prev => prev.map(d => d.word === word ? { ...d, status: 'error', errorMsg } : d));
         if (isRateLimit) {
            setProcessingStatus(`触发频率限制，已停止后续请求`);
+           stoppedEarly = true;
            break;
         }
       }
@@ -83,6 +85,9 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
       }
     }
     setIsProcessing(false);
+    if (!stoppedEarly) {
+      setProcessingStatus('');
+    }
   };
 
   const handleAnalyzeWords = async () => {
@@ -151,10 +156,10 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
       <div className="flex items-center gap-4 mb-6 border-b border-gray-100 pb-2">
-        <button onClick={() => setActiveTab(EntryType.WORD)} className={`flex items-center gap-2 pb-2 text-sm font-bold transition-colors border-b-2 ${activeTab === EntryType.WORD ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+        <button onClick={() => { setActiveTab(EntryType.WORD); setProcessingStatus(''); }} className={`flex items-center gap-2 pb-2 text-sm font-bold transition-colors border-b-2 ${activeTab === EntryType.WORD ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
           <Type className="w-4 h-4" /> 生字词录入
         </button>
-        <button onClick={() => setActiveTab(EntryType.POEM)} className={`flex items-center gap-2 pb-2 text-sm font-bold transition-colors border-b-2 ${activeTab === EntryType.POEM ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+        <button onClick={() => { setActiveTab(EntryType.POEM); setProcessingStatus(''); }} className={`flex items-center gap-2 pb-2 text-sm font-bold transition-colors border-b-2 ${activeTab === EntryType.POEM ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
           <ScrollText className="w-4 h-4" /> 古诗词录入
         </button>
       </div>
@@ -180,7 +185,12 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
           </div>
           <div className="flex justify-between items-center border-t pt-3">
              <div className="text-sm text-gray-500">
-               {processingStatus && <span className="flex items-center text-primary font-medium"><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {processingStatus}</span>}
+               {processingStatus && (
+                 <span className={`flex items-center font-medium ${isProcessing ? 'text-primary' : 'text-red-500'}`}>
+                   {isProcessing && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} 
+                   {processingStatus}
+                 </span>
+               )}
              </div>
              <button onClick={handleAnalyzeWords} disabled={isProcessing || !inputText.trim()} className="bg-primary hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold transition-all transform active:scale-95 disabled:opacity-50 disabled:scale-100 shadow-md">开始分析</button>
           </div>
@@ -189,16 +199,27 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
           <textarea value={poemInput} onChange={(e) => setPoemInput(e.target.value)} placeholder="输入诗名或全诗内容。" className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary outline-none min-h-[120px]" />
           <div className="flex justify-between items-center border-t pt-3">
-             <div className="text-sm text-gray-500">{processingStatus && <span className="flex items-center text-primary font-medium"><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {processingStatus}</span>}</div>
+             <div className="text-sm text-gray-500">
+               {processingStatus && (
+                 <span className={`flex items-center font-medium ${isProcessing ? 'text-primary' : 'text-red-500'}`}>
+                   {isProcessing && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} 
+                   {processingStatus}
+                 </span>
+               )}
+             </div>
              <button onClick={async () => {
                 setIsProcessing(true);
+                setProcessingStatus('正在分析古诗...');
                 try {
                   const res = await analyzePoem(poemInput);
                   if (res) {
                     setDrafts([{ id: crypto.randomUUID(), word: res.word, analysis: res, enabledTypes: [QuestionType.POEM_FILL, QuestionType.POEM_DEFINITION], status: 'done', type: EntryType.POEM }]);
                     setPoemInput('');
                   }
-                } finally { setIsProcessing(false); }
+                } finally { 
+                  setIsProcessing(false); 
+                  setProcessingStatus('');
+                }
              }} disabled={isProcessing || !poemInput.trim()} className="bg-primary hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold shadow-md disabled:opacity-50">分析古诗</button>
           </div>
         </div>
