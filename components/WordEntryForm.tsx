@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Loader2, CheckCircle, AlertCircle, Camera, Image as ImageIcon, X, ScrollText, Type, RefreshCw, Info } from 'lucide-react';
+import React, { useState, useRef, useMemo } from 'react';
+import { Loader2, CheckCircle, AlertCircle, Camera, Image as ImageIcon, X, ScrollText, Type, RefreshCw, Info, AlertTriangle } from 'lucide-react';
 import { analyzeWordsBatch, extractWordsFromImage, analyzePoem } from '../services/geminiService';
 import { WordEntry, QuestionType, AnalysisResult, EntryType, TestStatus } from '../types';
 
@@ -16,6 +16,8 @@ interface DraftEntry {
 interface WordEntryFormProps {
   onAddWord: (entry: WordEntry) => void;
 }
+
+const MAX_BATCH_SIZE = 15; // 防止触发每分钟 15 次的 API 速率限制
 
 const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
   const [activeTab, setActiveTab] = useState<EntryType>(EntryType.WORD);
@@ -43,6 +45,10 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     });
     return Array.from(new Set(results));
   };
+
+  // 实时计算当前输入的词语数量
+  const detectedWords = useMemo(() => getUniqueWords(inputText), [inputText]);
+  const isOverLimit = detectedWords.length > MAX_BATCH_SIZE;
 
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -97,9 +103,13 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
       return;
     }
 
-    const words = getUniqueWords(inputText);
-    if (words.length === 0) return;
-    const initialDrafts: DraftEntry[] = words.map(w => ({
+    if (detectedWords.length === 0) return;
+    if (isOverLimit) {
+      alert(`为了保证分析质量，单次最多支持 ${MAX_BATCH_SIZE} 个词语，请分批录入。`);
+      return;
+    }
+
+    const initialDrafts: DraftEntry[] = detectedWords.map(w => ({
       id: crypto.randomUUID(),
       word: w,
       analysis: null,
@@ -109,7 +119,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
     }));
     setDrafts(initialDrafts);
     setInputText('');
-    await performAnalysis(words);
+    await performAnalysis(detectedWords);
   };
 
   const handleRetryFailed = async () => {
@@ -166,14 +176,25 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
 
       {activeTab === EntryType.WORD ? (
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-          <div className="relative mb-4">
+          <div className="relative mb-2">
             <textarea
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               placeholder="多个字词可用空格、逗号等分隔。若考核拼音，也只需输入字词，选择“注音”考点即可。"
-              className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary outline-none min-h-[100px] resize-y"
+              className={`w-full border rounded-lg px-4 py-3 focus:ring-2 outline-none min-h-[100px] resize-y transition-colors ${isOverLimit ? 'border-orange-300 focus:ring-orange-200 bg-orange-50' : 'border-gray-300 focus:ring-primary'}`}
             />
+            <div className={`text-xs text-right mt-1 font-medium transition-colors ${isOverLimit ? 'text-orange-600' : 'text-gray-400'}`}>
+              已识别: {detectedWords.length} / {MAX_BATCH_SIZE}
+            </div>
           </div>
+          
+          {isOverLimit && (
+             <div className="flex items-center gap-2 text-xs text-orange-600 bg-orange-50 p-2 rounded mb-4 border border-orange-100">
+               <AlertTriangle className="w-4 h-4 shrink-0" />
+               为保证 AI 分析质量及防止接口限流，单次请勿超过 {MAX_BATCH_SIZE} 个词语。
+             </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-4 mb-4">
             <span className="text-sm text-gray-600 font-medium">默认考点(必选):</span>
             {[QuestionType.PINYIN, QuestionType.DICTATION, QuestionType.DEFINITION, QuestionType.DEFINITION_MATCH].map(t => (
@@ -192,7 +213,13 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
                  </span>
                )}
              </div>
-             <button onClick={handleAnalyzeWords} disabled={isProcessing || !inputText.trim()} className="bg-primary hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold transition-all transform active:scale-95 disabled:opacity-50 disabled:scale-100 shadow-md">开始分析</button>
+             <button 
+               onClick={handleAnalyzeWords} 
+               disabled={isProcessing || !inputText.trim() || isOverLimit} 
+               className="bg-primary hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold transition-all transform active:scale-95 disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed shadow-md"
+             >
+               开始分析
+             </button>
           </div>
         </div>
       ) : (

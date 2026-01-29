@@ -1,4 +1,53 @@
 import { GoogleGenAI, Type } from "@google/genai";
+import pool from './db';
+
+// --- 风控配置 ---
+const RATE_LIMIT_WINDOW = 60 * 1000; // 窗口大小：1分钟 (毫秒)
+const MAX_REQUESTS_PER_WINDOW = 15;  // 阈值：每分钟最多 15 次请求
+
+/**
+ * 检查并更新 IP 的请求计数
+ * @param {string} ip - 客户端 IP
+ * @returns {Promise<boolean>} - 如果通过返回 true，被限流返回 false
+ */
+async function checkRateLimit(ip) {
+  try {
+    const now = Date.now();
+    const connection = await pool.getConnection();
+
+    try {
+      // 1. 获取当前 IP 的记录
+      const [rows] = await connection.query('SELECT window_start, request_count FROM rate_limits WHERE ip = ?', [ip]);
+      
+      if (rows.length > 0) {
+        const record = rows[0];
+        
+        // 2. 判断是否在当前窗口内
+        if (now - record.window_start < RATE_LIMIT_WINDOW) {
+          // 在窗口内，检查计数
+          if (record.request_count >= MAX_REQUESTS_PER_WINDOW) {
+            return false; // 超过限制
+          }
+          // 未超限，计数 + 1
+          await connection.query('UPDATE rate_limits SET request_count = request_count + 1 WHERE ip = ?', [ip]);
+        } else {
+          // 窗口已过期，重置窗口和计数
+          await connection.query('UPDATE rate_limits SET window_start = ?, request_count = 1 WHERE ip = ?', [now, ip]);
+        }
+      } else {
+        // 3. 新 IP，插入记录
+        await connection.query('INSERT INTO rate_limits (ip, window_start, request_count) VALUES (?, ?, 1)', [ip, now]);
+      }
+      return true;
+    } finally {
+      connection.release();
+    }
+  } catch (err) {
+    console.error("Rate Limit Error:", err);
+    // 如果数据库出错（比如表不存在），为了不影响业务，默认放行，但打印错误
+    return true; 
+  }
+}
 
 const itemSchemaProperties = {
   word: { type: Type.STRING, description: "原始词语" },
@@ -106,6 +155,19 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   
+  // --- 1. 执行风控检查 ---
+  // 获取真实 IP (兼容 Vercel/Proxy 环境)
+  const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
+  
+  // 排除本地开发环境 (localhost)
+  if (clientIp !== '::1' && clientIp !== '127.0.0.1' && clientIp !== 'unknown') {
+    const isAllowed = await checkRateLimit(clientIp);
+    if (!isAllowed) {
+      console.warn(`Rate limit exceeded for IP: ${clientIp}`);
+      return res.status(429).json({ error: "请求过于频繁，请 1 分钟后再试 (Rate limit exceeded)" });
+    }
+  }
+
   const dynamicApiKey = process.env.API_KEY;
   if (!dynamicApiKey) return res.status(500).json({ error: "Server API Key missing." });
 
