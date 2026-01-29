@@ -34,6 +34,15 @@ const batchAnalysisSchema = {
   required: ["results"]
 };
 
+const explanationSchema = {
+  type: Type.OBJECT,
+  properties: {
+    simpleDefinition: { type: Type.STRING, description: "该词语的简明释义" },
+    exampleSentence: { type: Type.STRING, description: "一个通俗易懂的例句" }
+  },
+  required: ["simpleDefinition", "exampleSentence"]
+};
+
 const poemSchema = {
   type: Type.OBJECT,
   properties: {
@@ -126,6 +135,13 @@ export default async function handler(req, res) {
       parts = [{ text: `你是一个资深的语文教育专家。分析古诗词 "${text}"...` }];
       schema = poemSchema;
       thinkingBudget = 10000;
+    } else if (type === 'explain-word') {
+      parts = [{ text: `你是一个语文老师。请为小学/初中学生解释生字词 "${text}"。
+      要求：
+      1. simpleDefinition: 用简洁的语言解释意思（20字以内）。
+      2. exampleSentence: 造一个通俗易懂的例句，帮助理解用法。` }];
+      schema = explanationSchema;
+      thinkingBudget = 0; // 简单任务无需深度思考
     } else if (type === 'ocr') {
       parts = [{ inlineData: { mimeType: 'image/jpeg', data: image } }, { text: "提取图中的所有中文生词、成语。" }];
       schema = ocrSchema;

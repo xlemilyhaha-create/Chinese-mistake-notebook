@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { WordEntry, EntryType } from '../types';
-import { ArrowLeft, ChevronLeft, ChevronRight, RotateCw, Filter, BookOpen, Quote, Edit2, Save, X } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, RotateCw, Filter, BookOpen, Quote, Edit2, Save, X, Wand2, Loader2, Sparkles, AlertCircle } from 'lucide-react';
+import { explainWord } from '../services/geminiService';
 
 interface ReviewFlashcardsProps {
   words: WordEntry[];
@@ -17,13 +18,17 @@ const ReviewFlashcards: React.FC<ReviewFlashcardsProps> = ({ words, onBack, onUp
   const [isEditing, setIsEditing] = useState(false);
   const [editDefinition, setEditDefinition] = useState('');
   const [editExample, setEditExample] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+  
+  // Prevent infinite auto-gen loops
+  const hasTriedAutoGenerateRef = useRef(false);
 
   const availableDates = useMemo(() => {
     const dates = new Set(words.map(w => new Date(w.createdAt).toLocaleDateString('zh-CN')));
     return Array.from(dates).sort().reverse();
   }, [words]);
 
-  // 只复习生字词
   const filteredWords = useMemo(() => {
     return words.filter(w => {
       if (w.type !== EntryType.WORD) return false;
@@ -37,9 +42,13 @@ const ReviewFlashcards: React.FC<ReviewFlashcardsProps> = ({ words, onBack, onUp
   // Reset state when changing card
   useEffect(() => {
     setIsEditing(false);
+    setIsGenerating(false);
+    setGenError(null);
+    setIsFlipped(false);
+    hasTriedAutoGenerateRef.current = false; // Reset auto-gen flag
+    
     if (currentWord) {
       const defData = currentWord.definitionData;
-      // Load existing data or fallback
       const definition = defData?.simpleDefinition 
         || (defData?.options && defData.correctIndex !== undefined ? defData.options[defData.correctIndex] : '')
         || "";
@@ -48,12 +57,61 @@ const ReviewFlashcards: React.FC<ReviewFlashcardsProps> = ({ words, onBack, onUp
       setEditDefinition(definition);
       setEditExample(example);
     }
-  }, [currentWord, currentIndex]);
+  }, [currentWord?.id]); 
+
+  // Logic to execute generation
+  const performGeneration = async () => {
+    if (!currentWord || isGenerating) return;
+    
+    setIsGenerating(true);
+    setGenError(null);
+    hasTriedAutoGenerateRef.current = true; // Mark as tried
+
+    try {
+      const res = await explainWord(currentWord.word);
+      if (res) {
+        if (isEditing) {
+          setEditDefinition(res.simpleDefinition);
+          setEditExample(res.exampleSentence);
+        } else {
+          const newDefinitionData = {
+            ...(currentWord.definitionData || {
+              targetChar: currentWord.word[0],
+              options: [],
+              correctIndex: 0
+            }),
+            simpleDefinition: res.simpleDefinition,
+            exampleSentence: res.exampleSentence
+          };
+          onUpdate(currentWord.id, { definitionData: newDefinitionData });
+        }
+      } else {
+        setGenError("AI 未返回数据");
+      }
+    } catch (err) {
+      console.error("Auto-gen failed", err);
+      setGenError("生成失败，请检查网络");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Auto-generate effect
+  useEffect(() => {
+    if (isFlipped && currentWord && !isGenerating && !isEditing && !hasTriedAutoGenerateRef.current && !genError) {
+       const defData = currentWord.definitionData;
+       const missingSimpleDef = !defData?.simpleDefinition || defData.simpleDefinition.trim() === '';
+       const missingExample = !defData?.exampleSentence || defData.exampleSentence.trim() === '';
+       
+       if (missingSimpleDef || missingExample) {
+         performGeneration();
+       }
+    }
+  }, [isFlipped, currentWord, isGenerating, isEditing, genError]);
 
   const handleNext = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (currentIndex < filteredWords.length - 1) {
-      setIsFlipped(false);
       setTimeout(() => setCurrentIndex(c => c + 1), 150);
     }
   };
@@ -61,7 +119,6 @@ const ReviewFlashcards: React.FC<ReviewFlashcardsProps> = ({ words, onBack, onUp
   const handlePrev = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (currentIndex > 0) {
-      setIsFlipped(false);
       setTimeout(() => setCurrentIndex(c => c - 1), 150);
     }
   };
@@ -98,7 +155,6 @@ const ReviewFlashcards: React.FC<ReviewFlashcardsProps> = ({ words, onBack, onUp
   const handleCancelEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsEditing(false);
-    // Reset to original values
     const defData = currentWord.definitionData;
     const definition = defData?.simpleDefinition 
       || (defData?.options && defData.correctIndex !== undefined ? defData.options[defData.correctIndex] : '')
@@ -108,17 +164,21 @@ const ReviewFlashcards: React.FC<ReviewFlashcardsProps> = ({ words, onBack, onUp
     setEditExample(example);
   };
 
+  const handleManualGenerate = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    performGeneration();
+  };
+
   // 提取显示数据 (用于非编辑模式)
   const displayData = useMemo(() => {
     if (!currentWord) return null;
     const defData = currentWord.definitionData;
     
-    // 优先使用新字段 simpleDefinition，如果没有则尝试从选项中获取
+    // Logic for display text
     const definition = defData?.simpleDefinition 
-      || (defData?.options ? defData.options[defData.correctIndex] : null)
-      || "暂无释义 (点击编辑补充)";
+      || (defData?.options ? defData.options[defData.correctIndex] : null);
       
-    const example = defData?.exampleSentence || "暂无例句 (点击编辑补充)";
+    const example = defData?.exampleSentence;
 
     return {
       word: currentWord.word,
@@ -199,10 +259,19 @@ const ReviewFlashcards: React.FC<ReviewFlashcardsProps> = ({ words, onBack, onUp
             {/* Back */}
             <div className="absolute inset-0 bg-gradient-to-br from-primary to-indigo-700 rounded-3xl p-6 md:p-8 flex flex-col items-center backface-hidden rotate-y-180 text-white shadow-xl">
                
-               {/* Toolbar (Edit/Save) */}
-               <div className="w-full flex justify-end mb-2">
+               {/* Toolbar (Edit/Save/AI) */}
+               <div className="w-full flex justify-end mb-2 gap-2">
+                 <button 
+                    onClick={handleManualGenerate} 
+                    disabled={isGenerating}
+                    className={`p-2 rounded-full transition-colors ${isGenerating ? 'bg-white/20' : 'text-white/50 hover:text-white hover:bg-white/10'}`} 
+                    title="强制 AI 重新生成"
+                 >
+                    {isGenerating ? <Loader2 className="w-5 h-5 animate-spin text-white" /> : <Sparkles className="w-5 h-5" />}
+                 </button>
+
                  {isEditing ? (
-                   <div className="flex gap-2">
+                   <div className="flex gap-2 border-l border-white/20 pl-2">
                      <button onClick={handleCancelEdit} className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors" title="取消">
                         <X className="w-4 h-4 text-white" />
                      </button>
@@ -232,9 +301,17 @@ const ReviewFlashcards: React.FC<ReviewFlashcardsProps> = ({ words, onBack, onUp
                         placeholder="请输入简明释义..."
                       />
                     ) : (
-                      <p className="text-xl font-medium leading-relaxed font-serif text-white/95">
-                        {displayData?.definition}
-                      </p>
+                      <>
+                        {isGenerating && !displayData?.definition ? (
+                          <p className="text-white/50 animate-pulse text-lg">AI 正在思考...</p>
+                        ) : displayData?.definition ? (
+                          <p className="text-xl font-medium leading-relaxed font-serif text-white/95">{displayData.definition}</p>
+                        ) : (
+                          <div onClick={(e) => { e.stopPropagation(); handleManualGenerate(e); }} className="p-3 border border-dashed border-white/30 rounded-lg text-center text-white/60 hover:text-white hover:border-white/60 cursor-pointer transition-all">
+                             {genError ? <span className="text-red-300 flex items-center justify-center"><AlertCircle className="w-4 h-4 mr-1"/> {genError}</span> : "暂无释义，点击 AI 生成"}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
 
@@ -252,9 +329,17 @@ const ReviewFlashcards: React.FC<ReviewFlashcardsProps> = ({ words, onBack, onUp
                         placeholder="请输入通俗例句..."
                       />
                     ) : (
-                      <p className="text-lg text-white/90 italic font-kai leading-relaxed">
-                        “{displayData?.example}”
-                      </p>
+                      <>
+                        {isGenerating && !displayData?.example ? (
+                           <p className="text-white/50 animate-pulse italic">AI 正在造句...</p>
+                        ) : displayData?.example ? (
+                           <p className="text-lg text-white/90 italic font-kai leading-relaxed">“{displayData.example}”</p>
+                        ) : (
+                           <div onClick={(e) => { e.stopPropagation(); handleManualGenerate(e); }} className="p-3 border border-dashed border-white/30 rounded-lg text-center text-white/60 hover:text-white hover:border-white/60 cursor-pointer transition-all">
+                              {genError ? <span className="text-red-300 flex items-center justify-center"><AlertCircle className="w-4 h-4 mr-1"/> {genError}</span> : "暂无例句，点击 AI 生成"}
+                           </div>
+                        )}
+                      </>
                     )}
                   </div>
                </div>

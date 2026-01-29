@@ -60,6 +60,16 @@ export const analyzeWord = async (word: string): Promise<AnalysisResult> => {
   return res[0];
 };
 
+export const explainWord = async (word: string): Promise<{simpleDefinition: string, exampleSentence: string} | null> => {
+  try {
+    const data = await analyzeWithGeminiBackend({ type: 'explain-word', text: word });
+    return data;
+  } catch (error) {
+    console.error("Explain Word Error:", error);
+    return null;
+  }
+};
+
 export const analyzePoem = async (input: string): Promise<AnalysisResult | null> => {
   try {
     const data = await analyzeWithGeminiBackend({ type: 'poem', text: input });
