@@ -331,7 +331,7 @@ const WordList: React.FC<WordListProps> = ({ words, onDelete, onUpdate }) => {
 
               <div className="flex items-center text-xs text-gray-400 mt-2 border-t pt-2">
                 <Calendar className="w-3 h-3 mr-1" />
-                {new Date(word.createdAt).toLocaleDateString('zh-CN')}
+                {new Date(word.createdAt).toLocaleString('zh-CN', { hour12: false })}
               </div>
             </div>
           );

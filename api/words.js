@@ -95,7 +95,13 @@ export default async function handler(req, res) {
       }
 
       if (req.method === 'DELETE') {
-        const { id } = req.query; // /api/words?id=xyz
+        const { id, action } = req.query; // /api/words?id=xyz or /api/words?action=clear
+        
+        if (action === 'clear') {
+           await connection.query('DELETE FROM words');
+           return res.status(200).json({ success: true });
+        }
+
         if (!id) return res.status(400).json({ error: "Missing ID" });
         await connection.query('DELETE FROM words WHERE id = ?', [id]);
         return res.status(200).json({ success: true });

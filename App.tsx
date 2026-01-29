@@ -104,6 +104,13 @@ const App: React.FC = () => {
     } catch (e) { console.error("Delete error", e); }
   };
 
+  const deleteAllWordsFromBackend = async () => {
+    try {
+      // 传递 clearAll 参数以触发批量删除
+      await fetch(`/api/words?action=clear`, { method: 'DELETE' });
+    } catch (e) { console.error("Clear all error", e); }
+  };
+
   useEffect(() => {
     fetchWords();
     checkEnvironment();
@@ -173,6 +180,17 @@ const App: React.FC = () => {
     };
     reader.readAsText(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleClearAll = async () => {
+    if (confirm("确定要清空所有题库数据吗？\n此操作将删除数据库及本地所有记录，且不可恢复！")) {
+      if (confirm("再次确认：您确定要删除所有数据吗？")) {
+         await deleteAllWordsFromBackend();
+         setWords([]);
+         localStorage.removeItem('yuwen_words');
+         alert("题库已清空");
+      }
+    }
   };
 
   if (currentView === View.EXAM) {
@@ -277,7 +295,7 @@ const App: React.FC = () => {
                   <button onClick={() => fileInputRef.current?.click()} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded text-sm hover:bg-gray-50 text-gray-700 font-bold"><Upload className="w-4 h-4" /> 导入数据</button>
                   <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleImport} />
                 </div>
-                <button onClick={() => { if(confirm("清空前请确认已备份！操作不可撤销。")) { setWords([]); localStorage.removeItem('yuwen_words'); }}} className="w-full mt-2 flex items-center justify-center gap-2 px-3 py-2 bg-red-50 border border-red-100 rounded text-sm hover:bg-red-100 text-red-600 font-bold transition-colors"><Trash2 className="w-4 h-4" /> 清空题库</button>
+                <button onClick={handleClearAll} className="w-full mt-2 flex items-center justify-center gap-2 px-3 py-2 bg-red-50 border border-red-100 rounded text-sm hover:bg-red-100 text-red-600 font-bold transition-colors"><Trash2 className="w-4 h-4" /> 清空题库</button>
               </div>
             </div>
           </div>

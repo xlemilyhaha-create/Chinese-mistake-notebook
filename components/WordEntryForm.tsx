@@ -20,7 +20,8 @@ interface WordEntryFormProps {
 const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
   const [activeTab, setActiveTab] = useState<EntryType>(EntryType.WORD);
   const [inputText, setInputText] = useState('');
-  const [defaultTypes, setDefaultTypes] = useState<QuestionType[]>([QuestionType.PINYIN, QuestionType.DICTATION, QuestionType.DEFINITION_MATCH]);
+  // 修改：默认不勾选任何考点，强迫用户手动选择
+  const [defaultTypes, setDefaultTypes] = useState<QuestionType[]>([]);
   const [poemInput, setPoemInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<string>('');
@@ -61,9 +62,6 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
         if (result) {
           setDrafts(prev => prev.map(d => {
             if (d.word !== word) return d;
-            // 修正点：即使 AI 没返回对应数据，也保留用户的初始 enabledTypes 选择
-            // 后续保存时如果确实没数据，在 ExamGenerator 渲染时会自动跳过，
-            // 但不能在这里静默修改用户的意图，否则会导致用户发现勾选的考点“不见了”
             return { ...d, analysis: result, status: 'done' };
           }));
         } else {
@@ -88,6 +86,12 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
   };
 
   const handleAnalyzeWords = async () => {
+    // 新增：校验是否选择了考点
+    if (defaultTypes.length === 0) {
+      alert("请至少选择一个默认考点（如：注音、书写等）后再开始分析。");
+      return;
+    }
+
     const words = getUniqueWords(inputText);
     if (words.length === 0) return;
     const initialDrafts: DraftEntry[] = words.map(w => ({
@@ -166,7 +170,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
             />
           </div>
           <div className="flex flex-wrap items-center gap-4 mb-4">
-            <span className="text-sm text-gray-600 font-medium">默认考点:</span>
+            <span className="text-sm text-gray-600 font-medium">默认考点(必选):</span>
             {[QuestionType.PINYIN, QuestionType.DICTATION, QuestionType.DEFINITION, QuestionType.DEFINITION_MATCH].map(t => (
                <label key={t} className="flex items-center space-x-2 cursor-pointer select-none">
                  <input type="checkbox" checked={defaultTypes.includes(t)} onChange={() => setDefaultTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])} className="w-4 h-4 text-primary rounded border-gray-300" />
