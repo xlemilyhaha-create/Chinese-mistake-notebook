@@ -1,53 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import pool from './db';
 
-// --- 风控配置 ---
-const RATE_LIMIT_WINDOW = 60 * 1000; // 窗口大小：1分钟 (毫秒)
-const MAX_REQUESTS_PER_WINDOW = 15;  // 阈值：每分钟最多 15 次请求
-
-/**
- * 检查并更新 IP 的请求计数
- * @param {string} ip - 客户端 IP
- * @returns {Promise<boolean>} - 如果通过返回 true，被限流返回 false
- */
-async function checkRateLimit(ip) {
-  try {
-    const now = Date.now();
-    const connection = await pool.getConnection();
-
-    try {
-      // 1. 获取当前 IP 的记录
-      const [rows] = await connection.query('SELECT window_start, request_count FROM rate_limits WHERE ip = ?', [ip]);
-      
-      if (rows.length > 0) {
-        const record = rows[0];
-        
-        // 2. 判断是否在当前窗口内
-        if (now - record.window_start < RATE_LIMIT_WINDOW) {
-          // 在窗口内，检查计数
-          if (record.request_count >= MAX_REQUESTS_PER_WINDOW) {
-            return false; // 超过限制
-          }
-          // 未超限，计数 + 1
-          await connection.query('UPDATE rate_limits SET request_count = request_count + 1 WHERE ip = ?', [ip]);
-        } else {
-          // 窗口已过期，重置窗口和计数
-          await connection.query('UPDATE rate_limits SET window_start = ?, request_count = 1 WHERE ip = ?', [now, ip]);
-        }
-      } else {
-        // 3. 新 IP，插入记录
-        await connection.query('INSERT INTO rate_limits (ip, window_start, request_count) VALUES (?, ?, 1)', [ip, now]);
-      }
-      return true;
-    } finally {
-      connection.release();
-    }
-  } catch (err) {
-    console.error("Rate Limit Error:", err);
-    // 如果数据库出错（比如表不存在），为了不影响业务，默认放行，但打印错误
-    return true; 
-  }
-}
+// 暂时移除数据库限流，以防止因未配置数据库导致的 500 错误
+// import pool from './db';
 
 const itemSchemaProperties = {
   word: { type: Type.STRING, description: "原始词语" },
@@ -57,7 +11,7 @@ const itemSchemaProperties = {
   options: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true, description: "4个释义选项" },
   correctIndex: { type: Type.INTEGER, nullable: true },
   simpleDefinition: { type: Type.STRING, description: "该词语的简明释义，用于复习卡片" },
-  exampleSentence: { type: Type.STRING, description: "一个通俗易懂的例句，帮助记忆该词语的意思和用法" },
+  exampleSentence: { type: Type.STRING, description: "一个通俗易懂的例句，帮助理解该词语的意思和用法" },
   hasMatchQuestion: { type: Type.BOOLEAN },
   matchMode: { type: Type.STRING, description: "SAME_AS_TARGET (找字义相同), SYNONYM_CHOICE (选词填空), or TWO_WAY_COMPARE (二选一判断)" },
   matchContext: { type: Type.STRING, nullable: true },
@@ -155,21 +109,8 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   
-  // --- 1. 执行风控检查 ---
-  // 获取真实 IP (兼容 Vercel/Proxy 环境)
-  const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
-  
-  // 排除本地开发环境 (localhost)
-  if (clientIp !== '::1' && clientIp !== '127.0.0.1' && clientIp !== 'unknown') {
-    const isAllowed = await checkRateLimit(clientIp);
-    if (!isAllowed) {
-      console.warn(`Rate limit exceeded for IP: ${clientIp}`);
-      return res.status(429).json({ error: "请求过于频繁，请 1 分钟后再试 (Rate limit exceeded)" });
-    }
-  }
-
   const dynamicApiKey = process.env.API_KEY;
-  if (!dynamicApiKey) return res.status(500).json({ error: "Server API Key missing." });
+  if (!dynamicApiKey) return res.status(500).json({ error: "Server API Key missing. Please check your environment variables." });
 
   try {
     const ai = new GoogleGenAI({ apiKey: dynamicApiKey });
@@ -192,18 +133,19 @@ export default async function handler(req, res) {
       
       请确保 results 数组中每个对象都完整包含 definitionData 和 matchData 相关字段。` }];
       schema = batchAnalysisSchema;
-      thinkingBudget = 4000;
+      // 降低 thinking budget 防止超时，或者如果不需要极度复杂的推理，可以设为0
+      thinkingBudget = 2048; 
     } else if (type === 'poem') {
       parts = [{ text: `你是一个资深的语文教育专家。分析古诗词 "${text}"...` }];
       schema = poemSchema;
-      thinkingBudget = 10000;
+      thinkingBudget = 4096;
     } else if (type === 'explain-word') {
       parts = [{ text: `你是一个语文老师。请为小学/初中学生解释生字词 "${text}"。
       要求：
       1. simpleDefinition: 用简洁的语言解释意思（20字以内）。
       2. exampleSentence: 造一个通俗易懂的例句，帮助理解用法。` }];
       schema = explanationSchema;
-      thinkingBudget = 0; // 简单任务无需深度思考
+      thinkingBudget = 0;
     } else if (type === 'ocr') {
       parts = [{ inlineData: { mimeType: 'image/jpeg', data: image } }, { text: "提取图中的所有中文生词、成语。" }];
       schema = ocrSchema;
@@ -215,12 +157,13 @@ export default async function handler(req, res) {
       config: { 
         responseMimeType: 'application/json', 
         responseSchema: schema,
-        thinkingConfig: { thinkingBudget }
+        thinkingConfig: thinkingBudget > 0 ? { thinkingBudget } : undefined
       }
     });
 
     return res.status(200).json(JSON.parse(cleanJson(response.text)));
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    console.error("Analysis API Error:", error);
+    return res.status(500).json({ error: error.message || "Internal Server Error" });
   }
 }

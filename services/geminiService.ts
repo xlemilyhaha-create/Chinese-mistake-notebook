@@ -1,4 +1,3 @@
-
 import { AnalysisResult, EntryType, MatchMode } from "../types";
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -19,7 +18,6 @@ const analyzeWithGeminiBackend = async (payload: any, retries = 4) => {
 
     // 处理频率限制 (Rate Limit)
     if (response.status === 429 && retries > 0) {
-      // 随着重试次数增加，等待时间变长 (10s, 20s, 30s...)
       const waitTime = (5 - retries) * 10000; 
       console.warn(`AI 频率限制，将在 ${waitTime/1000} 秒后重试...`);
       await delay(waitTime);
@@ -27,8 +25,20 @@ const analyzeWithGeminiBackend = async (payload: any, retries = 4) => {
     }
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `API failure: ${response.status}`);
+      let errorMessage = `API failure: ${response.status}`;
+      try {
+        const text = await response.text();
+        try {
+          const json = JSON.parse(text);
+          errorMessage = json.error || errorMessage;
+        } catch {
+          // If not JSON, use a snippet of the text (e.g. HTML title or first 100 chars)
+          errorMessage = `Server Error (${response.status}): ${text.slice(0, 100)}`;
+        }
+      } catch (e) {
+        // failed to read text
+      }
+      throw new Error(errorMessage);
     }
 
     return await response.json();
