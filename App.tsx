@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BookOpen, FileText, Settings, Database, Download, Upload, Trash2, Key, Save, Loader2, CheckCircle, AlertCircle, Globe, Info } from 'lucide-react';
+import { BookOpen, FileText, Settings, Database, Download, Upload, Trash2, Key, Save, Loader2, CheckCircle, AlertCircle, Globe, Info, GraduationCap } from 'lucide-react';
 import WordEntryForm from './components/WordEntryForm';
 import WordList from './components/WordList';
 import ExamGenerator from './components/ExamGenerator';
+import ReviewFlashcards from './components/ReviewFlashcards';
 import { WordEntry, EntryType, TestStatus } from './types';
 
 enum View {
   HOME = 'HOME',
   EXAM = 'EXAM',
+  REVIEW = 'REVIEW',
 }
 
 declare global {
@@ -197,6 +199,10 @@ const App: React.FC = () => {
     return <ExamGenerator words={words} onBack={() => setCurrentView(View.HOME)} />;
   }
 
+  if (currentView === View.REVIEW) {
+    return <ReviewFlashcards words={words} onBack={() => setCurrentView(View.HOME)} />;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
@@ -214,6 +220,16 @@ const App: React.FC = () => {
              >
                <Settings className="w-5 h-5" />
              </button>
+             
+            <button 
+              onClick={() => setCurrentView(View.REVIEW)}
+              disabled={isLoading || words.length === 0}
+              className="flex items-center gap-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-3 py-2 rounded-lg text-sm font-bold transition-colors disabled:opacity-50"
+            >
+              <GraduationCap className="w-4 h-4 text-secondary" />
+              <span className="hidden sm:inline">复习闪卡</span>
+            </button>
+
             <button 
               onClick={() => setCurrentView(View.EXAM)}
               disabled={isLoading || words.length === 0}

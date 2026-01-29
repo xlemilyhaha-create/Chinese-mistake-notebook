@@ -170,7 +170,7 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
             <textarea
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder="输入字词，或录入对：'改变 vs 改善'"
+              placeholder="多个字词可用空格、逗号等分隔。若考核拼音，也只需输入字词，选择“注音”考点即可。"
               className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary outline-none min-h-[100px] resize-y"
             />
           </div>

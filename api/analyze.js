@@ -7,6 +7,8 @@ const itemSchemaProperties = {
   targetChar: { type: Type.STRING, nullable: true },
   options: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true, description: "4个释义选项" },
   correctIndex: { type: Type.INTEGER, nullable: true },
+  simpleDefinition: { type: Type.STRING, description: "该词语的简明释义，用于复习卡片" },
+  exampleSentence: { type: Type.STRING, description: "一个通俗易懂的例句，帮助记忆该词语的意思和用法" },
   hasMatchQuestion: { type: Type.BOOLEAN },
   matchMode: { type: Type.STRING, description: "SAME_AS_TARGET (找字义相同), SYNONYM_CHOICE (选词填空), or TWO_WAY_COMPARE (二选一判断)" },
   matchContext: { type: Type.STRING, nullable: true },
@@ -25,7 +27,7 @@ const batchAnalysisSchema = {
       items: {
         type: Type.OBJECT,
         properties: itemSchemaProperties,
-        required: ["word", "pinyin", "hasDefinitionQuestion", "hasMatchQuestion"]
+        required: ["word", "pinyin", "hasDefinitionQuestion", "hasMatchQuestion", "simpleDefinition", "exampleSentence"]
       }
     }
   },
@@ -112,9 +114,10 @@ export default async function handler(req, res) {
       
       【强制要求】：
       1. 每个词语/成语都【必须】生成释义选择题 (hasDefinitionQuestion: true)，给出词语的准确含义及3个干扰项。
-      2. 每个词语/成语都【必须】生成辨析题 (hasMatchQuestion: true)。
-      3. 如果是成语（如“低声细语”），重点分析其整体含义。
-      4. 如果是对比词（如“改变 vs 改善”），使用 SYNONYM_CHOICE 模式。
+      2. 每个词语/成语都【必须】生成简明释义 (simpleDefinition) 和通俗例句 (exampleSentence)，用于制作复习闪卡。
+      3. 每个词语/成语都【必须】生成辨析题 (hasMatchQuestion: true)。
+      4. 如果是成语（如“低声细语”），重点分析其整体含义。
+      5. 如果是对比词（如“改变 vs 改善”），使用 SYNONYM_CHOICE 模式。
       
       请确保 results 数组中每个对象都完整包含 definitionData 和 matchData 相关字段。` }];
       schema = batchAnalysisSchema;

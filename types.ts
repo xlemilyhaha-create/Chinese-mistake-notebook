@@ -23,6 +23,8 @@ export interface DefinitionQuestionData {
   targetChar: string; // The specific character being tested
   options: string[]; // 4 options (Definitions)
   correctIndex: number; // 0-3
+  simpleDefinition?: string; // New: 简明释义
+  exampleSentence?: string; // New: 通俗例句
 }
 
 export enum MatchMode {

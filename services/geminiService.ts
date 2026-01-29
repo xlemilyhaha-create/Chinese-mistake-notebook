@@ -108,15 +108,20 @@ function mapDataToResult(data: any): AnalysisResult {
     };
   }
 
+  // 始终尝试构建 definitionData，即使 hasDefinitionQuestion 为 false，也要保存 simpleDefinition 和 exampleSentence
+  const defData = {
+    targetChar: data.targetChar || data.word?.[0] || '?',
+    options: data.options || [],
+    correctIndex: typeof data.correctIndex === 'number' ? data.correctIndex : 0,
+    simpleDefinition: data.simpleDefinition,
+    exampleSentence: data.exampleSentence
+  };
+
   return {
     type: EntryType.WORD,
     word: data.word,
     pinyin: data.pinyin,
-    definitionData: data.hasDefinitionQuestion && data.options && data.options.length === 4 ? {
-      targetChar: data.targetChar || data.word?.[0] || '?',
-      options: data.options,
-      correctIndex: typeof data.correctIndex === 'number' ? data.correctIndex : 0,
-    } : null,
+    definitionData: defData,
     definitionMatchData: matchData
   };
 }
