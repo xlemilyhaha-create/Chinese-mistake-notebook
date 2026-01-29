@@ -72,12 +72,21 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
             return { ...d, analysis: result, status: 'done' };
           }));
         } else {
-          setDrafts(prev => prev.map(d => d.word === word ? { ...d, status: 'error', errorMsg: 'AI解析超时' } : d));
+          setDrafts(prev => prev.map(d => d.word === word ? { ...d, status: 'error', errorMsg: 'AI未返回结果' } : d));
         }
       } catch (e: any) {
         const isRateLimit = e.message?.includes('429') || e.message?.toLowerCase().includes('too many requests');
-        const errorMsg = isRateLimit ? '服务器忙(请稍后重试)' : '接口异常';
+        
+        let errorMsg = isRateLimit ? '服务器忙(请稍后重试)' : (e.message || '未知错误');
+        
+        // 简单的错误信息翻译，提升体验
+        if (errorMsg.includes('API Key missing')) errorMsg = '未配置 API Key';
+        else if (errorMsg.includes('timeout')) errorMsg = '请求超时';
+        else if (errorMsg.includes('JSON')) errorMsg = 'AI返回格式错误';
+        else if (errorMsg.startsWith('Error: ')) errorMsg = errorMsg.substring(7); // 去掉 "Error: " 前缀
+
         setDrafts(prev => prev.map(d => d.word === word ? { ...d, status: 'error', errorMsg } : d));
+        
         if (isRateLimit) {
            setProcessingStatus(`触发频率限制，已停止后续请求`);
            stoppedEarly = true;
