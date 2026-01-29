@@ -125,12 +125,16 @@ export default async function handler(req, res) {
       parts = [{ text: `你是一个资深的语文教育专家。分析：${words.join(', ')}。
       
       【强制要求】：
-      1. 每个词语/成语都【必须】生成释义选择题 (hasDefinitionQuestion: true)，给出词语的准确含义及3个干扰项。
-      2. 每个词语/成语都【必须】生成简明释义 (simpleDefinition) 和通俗例句 (exampleSentence)，用于制作复习闪卡。
-      3. 每个词语/成语都【必须】生成辨析题 (hasMatchQuestion: true)。
-      4. 如果是成语（如“低声细语”），重点分析其整体含义。
-      5. 如果是对比词（如“改变 vs 改善”），使用 SYNONYM_CHOICE 模式。
+      1. 【释义选择题 (hasDefinitionQuestion)】：必须针对【整个词语/成语】的含义生成题目。
+         - options 必须是该【完整词语】的解释，严禁只解释其中某个字。
+         - 例如 "寸有所长"，选项应解释整词含义（如“比喻人各有长处”），而不能解释“寸”的意思。
       
+      2. 【复习卡片】：生成简明释义 (simpleDefinition) 和通俗例句 (exampleSentence)。
+
+      3. 【辨析题 (hasMatchQuestion)】：
+         - 默认情况 (SAME_AS_TARGET)：选择词语中的一个【核心字】作为 targetChar，考核该字在不同词语中的字义辨析。
+         - 对比词 (如“改变 vs 改善”)：使用 SYNONYM_CHOICE 模式。
+
       请确保 results 数组中每个对象都完整包含 definitionData 和 matchData 相关字段。` }];
       schema = batchAnalysisSchema;
       // 降低 thinking budget 防止超时，或者如果不需要极度复杂的推理，可以设为0

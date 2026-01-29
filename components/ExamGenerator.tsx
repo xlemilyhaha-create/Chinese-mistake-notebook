@@ -256,7 +256,7 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ words, onBack }) => {
                   {questions.definition.map((w, idx) => (
                     <div key={idx} className="question-item">
                       <div className="font-serif text-base mb-2 leading-relaxed">
-                        {idx + 1}. “<span className="font-bold underline underline-offset-4">{w.word}</span>”中“<span className="font-bold text-lg">{w.definitionData?.targetChar}</span>”的意思是：（ &nbsp; ）
+                        {idx + 1}. 下列对“<span className="font-bold underline underline-offset-4">{w.word}</span>”的意思解释最恰当的一项是：（ &nbsp; ）
                       </div>
                       <div className="grid grid-cols-2 gap-x-8 gap-y-2 pl-6 text-sm font-kai">
                         {w.definitionData?.options.map((opt, oIdx) => (
