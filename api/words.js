@@ -16,6 +16,9 @@ export default async function handler(req, res) {
   }
 
   try {
+    if (!pool) {
+      return res.status(503).json({ error: "Database not configured" });
+    }
     const connection = await pool.getConnection();
 
     try {

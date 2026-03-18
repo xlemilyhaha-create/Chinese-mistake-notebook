@@ -1,7 +1,7 @@
 import mysql from 'mysql2/promise';
 
 // Note: mysql2 must be installed in your environment: npm install mysql2
-const pool = mysql.createPool({
+const pool = process.env.DATABASE_URL ? mysql.createPool({
   uri: process.env.DATABASE_URL, 
   waitForConnections: true,
   connectionLimit: 10,
@@ -9,6 +9,6 @@ const pool = mysql.createPool({
   ssl: {
     rejectUnauthorized: false 
   }
-});
+}) : null;
 
 export default pool;

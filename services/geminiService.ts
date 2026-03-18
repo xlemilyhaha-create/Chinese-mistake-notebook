@@ -106,9 +106,10 @@ export const analyzePoem = async (input: string): Promise<AnalysisResult | null>
 
 export const extractWordsFromImage = async (base64Data: string, mimeType: string): Promise<string[]> => {
   try {
-    const data = await analyzeWithGeminiBackend({ type: 'ocr', image: base64Data });
+    const data = await analyzeWithGeminiBackend({ type: 'ocr', image: base64Data, mimeType });
     return data.words || [];
   } catch (error) {
+    console.error("OCR Error:", error);
     return [];
   }
 };

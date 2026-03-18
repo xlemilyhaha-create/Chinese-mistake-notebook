@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 
 // 暂时移除数据库限流，以防止因未配置数据库导致的 500 错误
 // import pool from './db';
@@ -109,17 +109,17 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   
-  const dynamicApiKey = process.env.API_KEY;
+  const dynamicApiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
   if (!dynamicApiKey) return res.status(500).json({ error: "Server API Key missing. Please check your environment variables." });
 
   try {
     const ai = new GoogleGenAI({ apiKey: dynamicApiKey });
-    const { type, text, words, image } = req.body;
+    const { type, text, words, image, mimeType } = req.body;
 
     let model = 'gemini-3-flash-preview';
     let parts = [];
     let schema = null;
-    let thinkingBudget = 0;
+    let thinkingLevel = null;
 
     if (type === 'batch-words') {
       parts = [{ text: `你是一个资深的语文教育专家。分析：${words.join(', ')}。
@@ -138,20 +138,21 @@ export default async function handler(req, res) {
       请确保 results 数组中每个对象都完整包含 definitionData 和 matchData 相关字段。` }];
       schema = batchAnalysisSchema;
       // 降低 thinking budget 防止超时，或者如果不需要极度复杂的推理，可以设为0
-      thinkingBudget = 2048; 
+      thinkingLevel = ThinkingLevel.LOW; 
     } else if (type === 'poem') {
+      model = 'gemini-3.1-pro-preview';
       parts = [{ text: `你是一个资深的语文教育专家。分析古诗词 "${text}"...` }];
       schema = poemSchema;
-      thinkingBudget = 4096;
+      thinkingLevel = ThinkingLevel.HIGH;
     } else if (type === 'explain-word') {
       parts = [{ text: `你是一个语文老师。请为小学/初中学生解释生字词 "${text}"。
       要求：
       1. simpleDefinition: 用简洁的语言解释意思（20字以内）。
       2. exampleSentence: 造一个通俗易懂的例句，帮助理解用法。` }];
       schema = explanationSchema;
-      thinkingBudget = 0;
+      thinkingLevel = null;
     } else if (type === 'ocr') {
-      parts = [{ inlineData: { mimeType: 'image/jpeg', data: image } }, { text: "提取图中的所有中文生词、成语。" }];
+      parts = [{ inlineData: { mimeType: mimeType || 'image/jpeg', data: image } }, { text: "提取图中的所有中文生词、成语。" }];
       schema = ocrSchema;
     }
 
@@ -161,7 +162,7 @@ export default async function handler(req, res) {
       config: { 
         responseMimeType: 'application/json', 
         responseSchema: schema,
-        thinkingConfig: thinkingBudget > 0 ? { thinkingBudget } : undefined
+        thinkingConfig: thinkingLevel ? { thinkingLevel } : undefined
       }
     });
 
