@@ -109,8 +109,22 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   
-  const dynamicApiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
-  if (!dynamicApiKey) return res.status(500).json({ error: "Server API Key missing. Please check your environment variables." });
+  let dynamicApiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+  if (typeof dynamicApiKey === 'string') {
+    dynamicApiKey = dynamicApiKey.trim();
+  }
+  
+  if (!dynamicApiKey || dynamicApiKey === 'undefined' || dynamicApiKey === 'null') {
+    console.error("API Key is missing or invalid. Value:", dynamicApiKey);
+    return res.status(500).json({ error: "Server API Key missing. Please check your environment variables." });
+  }
+
+  // Debug log to see the length and first few characters of the key
+  console.log(`Using API Key of length ${dynamicApiKey.length}, starts with: ${dynamicApiKey.substring(0, 4)}...`);
+
+
+  // Ensure the environment variable is set for the SDK
+  process.env.GEMINI_API_KEY = dynamicApiKey;
 
   try {
     const ai = new GoogleGenAI({ apiKey: dynamicApiKey });
@@ -169,6 +183,13 @@ export default async function handler(req, res) {
     return res.status(200).json(JSON.parse(cleanJson(response.text)));
   } catch (error) {
     console.error("Analysis API Error:", error);
-    return res.status(500).json({ error: error.message || "Internal Server Error" });
+    let errorMessage = error.message || "Internal Server Error";
+    
+    // Provide a more helpful error message for API Key issues
+    if (errorMessage.includes("API Key not found") || errorMessage.includes("API_KEY_INVALID")) {
+      errorMessage = "Gemini API Key 无效或未找到。请检查 Vercel 环境变量中的 GEMINI_API_KEY 是否正确，或者该 Key 是否已被删除/禁用。";
+    }
+    
+    return res.status(500).json({ error: errorMessage });
   }
 }
