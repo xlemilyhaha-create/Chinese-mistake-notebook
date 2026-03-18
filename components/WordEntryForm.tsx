@@ -251,10 +251,16 @@ const WordEntryForm: React.FC<WordEntryFormProps> = ({ onAddWord }) => {
                   if (res) {
                     setDrafts([{ id: crypto.randomUUID(), word: res.word, analysis: res, enabledTypes: [QuestionType.POEM_FILL, QuestionType.POEM_DEFINITION], status: 'done', type: EntryType.POEM }]);
                     setPoemInput('');
+                    setProcessingStatus('');
                   }
+                } catch (err: any) {
+                  console.error("Error analyzing poem:", err);
+                  setProcessingStatus(`分析出错: ${err.message || '未知错误'}`);
+                  setIsProcessing(false);
+                  return; // Stop here so finally doesn't clear the error message immediately
                 } finally { 
                   setIsProcessing(false); 
-                  setProcessingStatus('');
+                  // setProcessingStatus(''); // Don't clear it here, let the user see the error or success
                 }
              }} disabled={isProcessing || !poemInput.trim()} className="bg-primary hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold shadow-md disabled:opacity-50">分析古诗</button>
           </div>

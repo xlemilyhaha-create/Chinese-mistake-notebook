@@ -80,7 +80,7 @@ export const explainWord = async (word: string): Promise<{simpleDefinition: stri
   }
 };
 
-export const analyzePoem = async (input: string): Promise<AnalysisResult | null> => {
+export const analyzePoem = async (input: string): Promise<AnalysisResult> => {
   try {
     const data = await analyzeWithGeminiBackend({ type: 'poem', text: input });
     return {
@@ -100,7 +100,8 @@ export const analyzePoem = async (input: string): Promise<AnalysisResult | null>
       }
     };
   } catch (error) {
-    return null;
+    console.error("Error analyzing poem:", error);
+    throw error;
   }
 };
 

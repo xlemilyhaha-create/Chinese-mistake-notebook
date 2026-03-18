@@ -154,10 +154,16 @@ export default async function handler(req, res) {
       // 降低 thinking budget 防止超时，或者如果不需要极度复杂的推理，可以设为0
       thinkingLevel = ThinkingLevel.LOW; 
     } else if (type === 'poem') {
-      model = 'gemini-3.1-pro-preview';
-      parts = [{ text: `你是一个资深的语文教育专家。分析古诗词 "${text}"...` }];
+      model = 'gemini-3-flash-preview';
+      parts = [{ text: `你是一个资深的语文教育专家。请分析古诗词 "${text}"。
+      要求：
+      1. 提取诗歌的标题 (title)、朝代 (dynasty)、作者 (author) 和完整内容 (content)。
+      2. 将诗歌按句拆分为数组 (lines)。
+      3. 生成默写填空题 (fillQuestions)：选择诗中的名句，挖空一部分。包含行号 (lineIndex)、空前内容 (pre)、答案 (answer)、空后内容 (post)。
+      4. 生成字词释义题 (definitionQuestions)：选择诗中的难字或多音字 (targetChar)，生成4个选项 (options)，并指出正确答案的索引 (correctIndex)。包含行号 (lineIndex)。
+      请严格按照 JSON 格式返回。` }];
       schema = poemSchema;
-      thinkingLevel = ThinkingLevel.HIGH;
+      thinkingLevel = null;
     } else if (type === 'explain-word') {
       parts = [{ text: `你是一个语文老师。请为小学/初中学生解释生字词 "${text}"。
       要求：
