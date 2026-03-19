@@ -2,7 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import analyzeHandler from "./api/analyze.js";
 import wordsHandler from "./api/words.js";
-import authRouter from "./api/auth.js";
+import authHandler from "./api/auth.js";
 import path from "path";
 
 async function startServer() {
@@ -13,7 +13,9 @@ async function startServer() {
   app.use(express.urlencoded({ extended: true })); // For form_post
 
   // API routes
-  app.use("/api/auth", authRouter);
+  app.all("/api/auth/*", async (req, res) => {
+    await authHandler(req, res);
+  });
 
   app.get("/api/health", (req, res) => {
     res.json({ 
