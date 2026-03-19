@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BookOpen, FileText, Settings, Database, Download, Upload, Trash2, Key, Save, Loader2, CheckCircle, AlertCircle, Globe, Info, GraduationCap } from 'lucide-react';
+import { BookOpen, FileText, Settings, Database, Download, Upload, Trash2, Key, Save, Loader2, CheckCircle, AlertCircle, Globe, Info, GraduationCap, User, LogOut } from 'lucide-react';
 import WordEntryForm from './components/WordEntryForm';
 import WordList from './components/WordList';
 import ExamGenerator from './components/ExamGenerator';
 import ReviewFlashcards from './components/ReviewFlashcards';
+import LoginModal from './components/LoginModal';
 import { WordEntry, EntryType, TestStatus } from './types';
 
 enum View {
@@ -30,6 +31,8 @@ const App: React.FC = () => {
   const [hasPaidKey, setHasPaidKey] = useState(false);
   const [isAiStudioEnv, setIsAiStudioEnv] = useState(false);
   const [isKeyActionLoading, setIsKeyActionLoading] = useState(false);
+  const [user, setUser] = useState<{ id: string; email: string; name?: string } | null>(null);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- 检查环境与密钥状态 ---
@@ -62,14 +65,36 @@ const App: React.FC = () => {
     }
   };
 
+  const handleLoginSuccess = (userData: { id: string; email: string; name?: string }, token: string) => {
+    setUser(userData);
+    localStorage.setItem('auth_token', token);
+    localStorage.setItem('auth_user', JSON.stringify(userData));
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
+  };
+
+  useEffect(() => {
+    const savedUser = localStorage.getItem('auth_user');
+    if (savedUser) {
+      try { setUser(JSON.parse(savedUser)); } catch (e) {}
+    }
+  }, []);
+
   const fetchWords = async () => {
     try {
       setIsLoading(true);
       const res = await fetch('/api/words');
-      if (res.ok) {
+      
+      const contentType = res.headers.get("content-type");
+      if (res.ok && contentType && contentType.includes("application/json")) {
         const data = await res.json();
         setWords(data);
       } else {
+        console.warn(`API returned ${res.status} or non-JSON response, falling back to local storage`);
         const saved = localStorage.getItem('yuwen_words');
         if (saved) setWords(JSON.parse(saved));
       }
@@ -214,6 +239,27 @@ const App: React.FC = () => {
           </div>
           
           <div className="flex items-center gap-3">
+            {user ? (
+              <div className="flex items-center gap-2 mr-2">
+                <span className="text-sm text-gray-600 hidden sm:inline">{user.name || user.email}</span>
+                <button
+                  onClick={handleLogout}
+                  className="p-2 rounded-lg text-gray-500 hover:bg-gray-50 transition-colors"
+                  title="退出登录"
+                >
+                  <LogOut className="w-5 h-5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsLoginModalOpen(true)}
+                className="flex items-center gap-2 bg-black text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-gray-800"
+              >
+                <User className="w-4 h-4" />
+                <span className="hidden sm:inline">登录 / 注册</span>
+              </button>
+            )}
+
              <button
               onClick={() => setShowSettings(!showSettings)}
               className={`p-2 rounded-lg transition-colors ${showSettings ? 'bg-gray-100 text-gray-900' : 'text-gray-500 hover:bg-gray-50'}`}
@@ -335,6 +381,12 @@ const App: React.FC = () => {
       <footer className="bg-white border-t border-gray-200 py-6 text-center text-sm text-gray-400 mt-auto">
         <p>© 2025 语文错题助手 - 智能学习伴侣</p>
       </footer>
+
+      <LoginModal 
+        isOpen={isLoginModalOpen} 
+        onClose={() => setIsLoginModalOpen(false)} 
+        onLoginSuccess={handleLoginSuccess} 
+      />
     </div>
   );
 };

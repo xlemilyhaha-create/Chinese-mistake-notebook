@@ -19,3 +19,17 @@ CREATE TABLE IF NOT EXISTS rate_limits (
   request_count INT DEFAULT 1,
   PRIMARY KEY (ip)
 );
+
+CREATE TABLE IF NOT EXISTS users (
+  id VARCHAR(36) PRIMARY KEY,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  created_at BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS verification_codes (
+  id VARCHAR(36) PRIMARY KEY,
+  email VARCHAR(255) NOT NULL,
+  code VARCHAR(10) NOT NULL,
+  expires_at BIGINT NOT NULL,
+  created_at BIGINT NOT NULL
+);

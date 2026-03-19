@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 
 // 暂时移除数据库限流，以防止因未配置数据库导致的 500 错误
-// import pool from './db';
+// import pool from './db.js';
 
 const itemSchemaProperties = {
   word: { type: Type.STRING, description: "原始词语" },

@@ -2,6 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import analyzeHandler from "./api/analyze.js";
 import wordsHandler from "./api/words.js";
+import authRouter from "./api/auth.js";
 import path from "path";
 
 async function startServer() {
@@ -9,8 +10,11 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json({ limit: '50mb' })); // For large base64 images
+  app.use(express.urlencoded({ extended: true })); // For form_post
 
   // API routes
+  app.use("/api/auth", authRouter);
+
   app.get("/api/health", (req, res) => {
     res.json({ 
       status: "ok", 

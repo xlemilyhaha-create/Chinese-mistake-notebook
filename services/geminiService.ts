@@ -41,6 +41,11 @@ const analyzeWithGeminiBackend = async (payload: any, retries = 4) => {
       throw new Error(errorMessage);
     }
 
+    const contentType = response.headers.get("content-type");
+    if (!contentType || !contentType.includes("application/json")) {
+      throw new Error(`API returned non-JSON response: ${contentType}`);
+    }
+
     return await response.json();
   } catch (error: any) {
     clearTimeout(timeoutId);
