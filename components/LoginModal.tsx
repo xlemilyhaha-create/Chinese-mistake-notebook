@@ -42,7 +42,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLoginSuccess
       
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || '发送失败');
+        throw new Error(data.details ? `${data.error}: ${data.details}` : (data.error || '发送失败'));
       }
       
       setCountdown(60);
@@ -71,7 +71,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLoginSuccess
       
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || '验证失败');
+        throw new Error(data.details ? `${data.error}: ${data.details}` : (data.error || '验证失败'));
       }
       
       onLoginSuccess(data.user, data.token);

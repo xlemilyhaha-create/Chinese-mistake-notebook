@@ -6,6 +6,23 @@ import pool from './db.js';
 
 const router = express.Router();
 
+// CORS middleware for auth router
+router.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+  );
+
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+  next();
+});
+
 // Setup nodemailer transporter
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.qq.com',
@@ -19,17 +36,21 @@ const transporter = nodemailer.createTransport({
 
 // 1. Send Verification Code
 router.post('/send-code', async (req, res) => {
+  console.log('Received request to /send-code', req.body);
   const { email } = req.body;
   
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+    console.log('Invalid email:', email);
     return res.status(400).json({ error: '无效的邮箱地址' });
   }
 
   if (!pool) {
-    return res.status(503).json({ error: '数据库未配置' });
+    console.log('Database not configured or invalid URL');
+    return res.status(503).json({ error: '数据库未配置或连接失败 (请检查 DATABASE_URL)' });
   }
 
   if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.log('SMTP not configured');
     return res.status(503).json({ error: '邮件服务未配置 (SMTP_USER / SMTP_PASS)' });
   }
 
@@ -63,7 +84,7 @@ router.post('/send-code', async (req, res) => {
     }
   } catch (error) {
     console.error('Send code error:', error);
-    res.status(500).json({ error: '发送验证码失败，请稍后再试' });
+    res.status(500).json({ error: '发送验证码失败，请稍后再试', details: error.message });
   }
 });
 
@@ -76,7 +97,7 @@ router.post('/verify-code', async (req, res) => {
   }
 
   if (!pool) {
-    return res.status(503).json({ error: '数据库未配置' });
+    return res.status(503).json({ error: '数据库未配置或连接失败 (请检查 DATABASE_URL)' });
   }
 
   try {
@@ -127,7 +148,7 @@ router.post('/verify-code', async (req, res) => {
     }
   } catch (error) {
     console.error('Verify code error:', error);
-    res.status(500).json({ error: '验证失败，请稍后再试' });
+    res.status(500).json({ error: '验证失败，请稍后再试', details: error.message });
   }
 });
 
