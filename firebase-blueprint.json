@@ -1,0 +1,72 @@
+{
+  "entities": {
+    "Word": {
+      "title": "Word",
+      "description": "A word or poem entry for learning and review.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the word entry."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["word", "poem"],
+          "description": "The type of the entry."
+        },
+        "word": {
+          "type": "string",
+          "description": "The actual word, phrase, or poem title."
+        },
+        "pinyin": {
+          "type": "string",
+          "description": "The pinyin pronunciation."
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Timestamp of creation."
+        },
+        "definitionData": {
+          "type": "string",
+          "description": "JSON stringified definition data."
+        },
+        "definitionMatchData": {
+          "type": "string",
+          "description": "JSON stringified definition match data."
+        },
+        "poemData": {
+          "type": "string",
+          "description": "JSON stringified poem data."
+        },
+        "enabledTypes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Array of enabled question types."
+        },
+        "testStatus": {
+          "type": "string",
+          "description": "Current test status (e.g., UNTESTED, PASSED, FAILED)."
+        },
+        "passedAfterRetries": {
+          "type": "boolean",
+          "description": "Whether the word was passed after retries."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The ID of the user who owns this word."
+        }
+      },
+      "required": ["id", "type", "word", "createdAt", "userId"]
+    }
+  },
+  "firestore": {
+    "/words/{wordId}": {
+      "schema": {
+        "$ref": "#/entities/Word"
+      },
+      "description": "Stores all word and poem entries."
+    }
+  }
+}

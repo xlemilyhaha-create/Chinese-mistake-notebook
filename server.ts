@@ -13,7 +13,7 @@ async function startServer() {
   app.use(express.urlencoded({ extended: true })); // For form_post
 
   // API routes
-  app.all("/api/auth/*", async (req, res) => {
+  app.all("/api/auth/*all", async (req, res) => {
     await authHandler(req, res);
   });
 
@@ -46,13 +46,13 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.get('*all', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
   });
 }
 

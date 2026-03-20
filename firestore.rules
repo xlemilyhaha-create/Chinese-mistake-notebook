@@ -1,0 +1,76 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: words
+    // Document ID: {wordId}
+    // Fields:
+    //   - id: string (required) - Unique identifier
+    //   - type: string (required) - 'word' or 'poem'
+    //   - word: string (required) - The word or poem title
+    //   - pinyin: string (optional) - Pinyin pronunciation
+    //   - createdAt: number (required) - Timestamp
+    //   - definitionData: string (optional) - JSON string
+    //   - definitionMatchData: string (optional) - JSON string
+    //   - poemData: string (optional) - JSON string
+    //   - enabledTypes: list (optional) - List of strings
+    //   - testStatus: string (optional) - e.g., 'UNTESTED'
+    //   - passedAfterRetries: boolean (optional)
+    //   - userId: string (required) - Owner ID
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function uidUnchanged() {
+      return !('userId' in request.resource.data) || request.resource.data.userId == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('userId' in request.resource.data) || request.resource.data.userId == resource.data.userId;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidWord(data) {
+      return hasRequiredFields(['id', 'type', 'word', 'createdAt', 'userId']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
+             data.type in ['word', 'poem'] &&
+             data.word is string && data.word.size() > 0 && data.word.size() < 500 &&
+             data.createdAt is number &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 100 &&
+             (!('pinyin' in data) || (data.pinyin is string && data.pinyin.size() < 500)) &&
+             (!('definitionData' in data) || (data.definitionData is string && data.definitionData.size() < 100000)) &&
+             (!('definitionMatchData' in data) || (data.definitionMatchData is string && data.definitionMatchData.size() < 100000)) &&
+             (!('poemData' in data) || (data.poemData is string && data.poemData.size() < 100000)) &&
+             (!('enabledTypes' in data) || (data.enabledTypes is list && data.enabledTypes.size() < 50)) &&
+             (!('testStatus' in data) || (data.testStatus is string && data.testStatus.size() < 50)) &&
+             (!('passedAfterRetries' in data) || data.passedAfterRetries is bool);
+    }
+
+    match /words/{wordId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && isValidWord(request.resource.data) && uidUnchanged();
+      allow update: if isDocOwner() && isValidWord(request.resource.data) && uidNotModified();
+      allow delete: if isDocOwner();
+    }
+  }
+}

@@ -66,106 +66,116 @@ const App: React.FC = () => {
   };
 
   const handleLoginSuccess = (userData: { id: string; email: string; name?: string }, token: string) => {
-    setUser(userData);
-    localStorage.setItem('auth_token', token);
-    localStorage.setItem('auth_user', JSON.stringify(userData));
+    // Handled by onAuthStateChanged
   };
 
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('auth_user');
+  const handleLogout = async () => {
+    const { logout } = await import('./firebase');
+    await logout();
   };
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('auth_user');
-    if (savedUser) {
-      try { setUser(JSON.parse(savedUser)); } catch (e) {}
-    }
-  }, []);
-
-  const fetchWords = async () => {
-    try {
-      setIsLoading(true);
-      const res = await fetch('/api/words');
+    let unsubscribeSnapshot: () => void;
+    
+    const initFirebase = async () => {
+      const { auth, db } = await import('./firebase');
+      const { onAuthStateChanged } = await import('firebase/auth');
+      const { collection, query, where, onSnapshot, orderBy } = await import('firebase/firestore');
       
-      const contentType = res.headers.get("content-type");
-      if (res.ok && contentType && contentType.includes("application/json")) {
-        const data = await res.json();
-        setWords(data);
-      } else {
-        console.warn(`API returned ${res.status} or non-JSON response, falling back to local storage`);
-        const saved = localStorage.getItem('yuwen_words');
-        if (saved) setWords(JSON.parse(saved));
-      }
-    } catch (e) {
-      console.error("Fetch error", e);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const addWordToBackend = async (entry: WordEntry) => {
-    try {
-      await fetch('/api/words', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(entry)
+      onAuthStateChanged(auth, (firebaseUser) => {
+        if (firebaseUser) {
+          setUser({ id: firebaseUser.uid, email: firebaseUser.email || '', name: firebaseUser.displayName || '' });
+          
+          // Set up Firestore listener
+          const q = query(
+            collection(db, 'words'),
+            where('userId', '==', firebaseUser.uid),
+            orderBy('createdAt', 'desc')
+          );
+          
+          setIsLoading(true);
+          unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+            const fetchedWords: WordEntry[] = [];
+            snapshot.forEach((doc) => {
+              const data = doc.data();
+              fetchedWords.push({
+                ...data,
+                id: doc.id,
+                definitionData: data.definitionData ? JSON.parse(data.definitionData) : undefined,
+                definitionMatchData: data.definitionMatchData ? JSON.parse(data.definitionMatchData) : undefined,
+                poemData: data.poemData ? JSON.parse(data.poemData) : undefined,
+              } as WordEntry);
+            });
+            setWords(fetchedWords);
+            setIsLoading(false);
+          }, (error) => {
+            console.error("Firestore Error: ", error);
+            setIsLoading(false);
+          });
+        } else {
+          setUser(null);
+          setWords([]);
+          setIsLoading(false);
+          if (unsubscribeSnapshot) unsubscribeSnapshot();
+        }
       });
-    } catch (e) { console.error("Add error", e); }
-  };
-
-  const updateWordInBackend = async (id: string, updates: Partial<WordEntry>) => {
-    try {
-      await fetch('/api/words', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, ...updates })
-      });
-    } catch (e) { console.error("Update error", e); }
-  };
-
-  const deleteWordFromBackend = async (id: string) => {
-    try {
-      await fetch(`/api/words?id=${id}`, { method: 'DELETE' });
-    } catch (e) { console.error("Delete error", e); }
-  };
-
-  const deleteAllWordsFromBackend = async () => {
-    try {
-      // 传递 clearAll 参数以触发批量删除
-      await fetch(`/api/words?action=clear`, { method: 'DELETE' });
-    } catch (e) { console.error("Clear all error", e); }
-  };
-
-  useEffect(() => {
-    fetchWords();
-    checkEnvironment();
-    // 轮询检查一次，防止 aistudio 对象注入延迟
-    const timer = setTimeout(checkEnvironment, 1000);
-    return () => clearTimeout(timer);
+    };
+    
+    initFirebase();
+    
+    return () => {
+      if (unsubscribeSnapshot) unsubscribeSnapshot();
+    };
   }, []);
 
-  useEffect(() => {
-    if (!isLoading && words.length > 0) {
-      localStorage.setItem('yuwen_words', JSON.stringify(words));
-    }
-  }, [words, isLoading]);
-
-  const handleAddWord = (entry: WordEntry) => {
+  const handleAddWord = async (entry: WordEntry) => {
+    if (!user) return alert("请先登录");
     const newEntry = { ...entry, testStatus: TestStatus.UNTESTED, passedAfterRetries: false };
+    // Optimistic update
     setWords(prev => [newEntry, ...prev]);
-    addWordToBackend(newEntry);
+    
+    try {
+      const { db } = await import('./firebase');
+      const { doc, setDoc } = await import('firebase/firestore');
+      const firestoreData = {
+        ...newEntry,
+        userId: user.id,
+        definitionData: newEntry.definitionData ? JSON.stringify(newEntry.definitionData) : null,
+        definitionMatchData: newEntry.definitionMatchData ? JSON.stringify(newEntry.definitionMatchData) : null,
+        poemData: newEntry.poemData ? JSON.stringify(newEntry.poemData) : null,
+      };
+      await setDoc(doc(db, 'words', newEntry.id), firestoreData);
+    } catch (e) {
+      console.error("Add error", e);
+      alert("添加失败，请重试");
+    }
   };
 
-  const handleDeleteWord = (id: string) => {
-    setWords(prev => prev.filter(w => w.id !== id));
-    deleteWordFromBackend(id);
+  const handleDeleteWord = async (id: string) => {
+    if (!user) return;
+    try {
+      const { db } = await import('./firebase');
+      const { doc, deleteDoc } = await import('firebase/firestore');
+      await deleteDoc(doc(db, 'words', id));
+    } catch (e) {
+      console.error("Delete error", e);
+    }
   };
 
-  const handleUpdateWord = (id: string, updates: Partial<WordEntry>) => {
-    setWords(prev => prev.map(w => w.id === id ? { ...w, ...updates } : w));
-    updateWordInBackend(id, updates);
+  const handleUpdateWord = async (id: string, updates: Partial<WordEntry>) => {
+    if (!user) return;
+    try {
+      const { db } = await import('./firebase');
+      const { doc, updateDoc } = await import('firebase/firestore');
+      const firestoreUpdates: any = { ...updates };
+      if (updates.definitionData !== undefined) firestoreUpdates.definitionData = updates.definitionData ? JSON.stringify(updates.definitionData) : null;
+      if (updates.definitionMatchData !== undefined) firestoreUpdates.definitionMatchData = updates.definitionMatchData ? JSON.stringify(updates.definitionMatchData) : null;
+      if (updates.poemData !== undefined) firestoreUpdates.poemData = updates.poemData ? JSON.stringify(updates.poemData) : null;
+      
+      await updateDoc(doc(db, 'words', id), firestoreUpdates);
+    } catch (e) {
+      console.error("Update error", e);
+    }
   };
 
   const handleExport = () => {
@@ -182,7 +192,7 @@ const App: React.FC = () => {
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !user) return;
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
@@ -198,9 +208,29 @@ const App: React.FC = () => {
                 testStatus: w.testStatus || TestStatus.UNTESTED,
                 passedAfterRetries: w.passedAfterRetries || false
               }));
-            setWords(prev => [...newWords, ...prev]);
-            for (const w of newWords) await addWordToBackend(w);
-            alert(`成功导入 ${newWords.length} 个新词语！`);
+            
+            try {
+              const { db } = await import('./firebase');
+              const { doc, writeBatch } = await import('firebase/firestore');
+              const batch = writeBatch(db);
+              
+              newWords.forEach(w => {
+                const firestoreData = {
+                  ...w,
+                  userId: user.id,
+                  definitionData: w.definitionData ? JSON.stringify(w.definitionData) : null,
+                  definitionMatchData: w.definitionMatchData ? JSON.stringify(w.definitionMatchData) : null,
+                  poemData: w.poemData ? JSON.stringify(w.poemData) : null,
+                };
+                batch.set(doc(db, 'words', w.id), firestoreData);
+              });
+              
+              await batch.commit();
+              alert(`成功导入 ${newWords.length} 个新词语！`);
+            } catch (e) {
+              console.error("Import error", e);
+              alert("导入失败，请重试");
+            }
           }
         } else alert("文件格式不正确");
       } catch (err) { alert("无法解析文件"); }
@@ -210,15 +240,34 @@ const App: React.FC = () => {
   };
 
   const handleClearAll = async () => {
+    if (!user) return;
     if (confirm("确定要清空所有题库数据吗？\n此操作将删除数据库及本地所有记录，且不可恢复！")) {
       if (confirm("再次确认：您确定要删除所有数据吗？")) {
-         await deleteAllWordsFromBackend();
-         setWords([]);
-         localStorage.removeItem('yuwen_words');
-         alert("题库已清空");
+         try {
+           const { db } = await import('./firebase');
+           const { doc, writeBatch } = await import('firebase/firestore');
+           const batch = writeBatch(db);
+           
+           words.forEach(w => {
+             batch.delete(doc(db, 'words', w.id));
+           });
+           
+           await batch.commit();
+           alert("题库已清空");
+         } catch (e) {
+           console.error("Clear all error", e);
+           alert("清空失败，请重试");
+         }
       }
     }
   };
+
+  useEffect(() => {
+    checkEnvironment();
+    // 轮询检查一次，防止 aistudio 对象注入延迟
+    const timer = setTimeout(checkEnvironment, 1000);
+    return () => clearTimeout(timer);
+  }, []);
 
   if (currentView === View.EXAM) {
     return <ExamGenerator words={words} onBack={() => setCurrentView(View.HOME)} />;

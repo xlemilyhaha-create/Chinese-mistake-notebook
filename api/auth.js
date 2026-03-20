@@ -37,8 +37,7 @@ export default async function handler(req, res) {
     console.log('Received request to /send-code', req.body);
     const { email } = req.body;
     
-    if (!email || !/^\\S+@\\S+\\.\\S+$/.test(email)) {
-      console.log('Invalid email:', email);
+    if (!email || !email.includes('@')) {
       return res.status(400).json({ error: '无效的邮箱地址' });
     }
 
@@ -69,11 +68,11 @@ export default async function handler(req, res) {
 
         // Send email
         await transporter.sendMail({
-          from: \`"语文错题助手" <\${process.env.SMTP_USER}>\`,
+          from: `"语文错题助手" <${process.env.SMTP_USER}>`,
           to: email,
           subject: '您的登录验证码',
-          text: \`您的登录验证码是：\${code}。该验证码在 10 分钟内有效。请勿泄露给他人。\`,
-          html: \`<p>您的登录验证码是：<strong style="font-size: 24px;">\${code}</strong></p><p>该验证码在 10 分钟内有效。请勿泄露给他人。</p>\`
+          text: `您的登录验证码是：${code}。该验证码在 10 分钟内有效。请勿泄露给他人。`,
+          html: `<p>您的登录验证码是：<strong style="font-size: 24px;">${code}</strong></p><p>该验证码在 10 分钟内有效。请勿泄露给他人。</p>`
         });
 
         res.json({ success: true, message: '验证码已发送' });

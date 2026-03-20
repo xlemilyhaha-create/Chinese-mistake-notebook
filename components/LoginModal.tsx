@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { X, Mail, KeyRound, Loader2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Loader2 } from 'lucide-react';
+import { signInWithGoogle } from '../firebase';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -8,76 +9,21 @@ interface LoginModalProps {
 }
 
 const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLoginSuccess }) => {
-  const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [isSending, setIsSending] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
-  const [countdown, setCountdown] = useState(0);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (countdown > 0) {
-      timer = setTimeout(() => setCountdown(countdown - 1), 1000);
-    }
-    return () => clearTimeout(timer);
-  }, [countdown]);
 
   if (!isOpen) return null;
 
-  const handleSendCode = async () => {
-    if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
-      setError('请输入有效的邮箱地址');
-      return;
-    }
-    
-    setError('');
-    setIsSending(true);
-    try {
-      const res = await fetch('/api/auth/send-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-      
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.details ? `${data.error}: ${data.details}` : (data.error || '发送失败'));
-      }
-      
-      setCountdown(60);
-      alert('验证码已发送到您的邮箱，请查收！');
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setIsSending(false);
-    }
-  };
-
-  const handleVerify = async () => {
-    if (!email || !code) {
-      setError('请填写邮箱和验证码');
-      return;
-    }
-
+  const handleGoogleLogin = async () => {
     setError('');
     setIsVerifying(true);
     try {
-      const res = await fetch('/api/auth/verify-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, code })
-      });
-      
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.details ? `${data.error}: ${data.details}` : (data.error || '验证失败'));
-      }
-      
-      onLoginSuccess(data.user, data.token);
+      const user = await signInWithGoogle();
+      const token = await user.getIdToken();
+      onLoginSuccess({ id: user.uid, email: user.email || '', name: user.displayName || '' }, token);
       onClose();
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || '登录失败，请重试');
     } finally {
       setIsVerifying(false);
     }
@@ -87,7 +33,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLoginSuccess
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         <div className="flex justify-between items-center p-5 border-b border-gray-100">
-          <h2 className="text-xl font-bold text-gray-800">邮箱登录 / 注册</h2>
+          <h2 className="text-xl font-bold text-gray-800">登录</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
             <X className="w-5 h-5" />
           </button>
@@ -99,59 +45,41 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLoginSuccess
               {error}
             </div>
           )}
-          
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700">邮箱地址</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Mail className="h-5 w-5 text-gray-400" />
-              </div>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary sm:text-sm"
-                placeholder="your@email.com"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700">验证码</label>
-            <div className="flex gap-3">
-              <div className="relative flex-1">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <KeyRound className="h-5 w-5 text-gray-400" />
-                </div>
-                <input
-                  type="text"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary sm:text-sm"
-                  placeholder="6位验证码"
-                  maxLength={6}
-                />
-              </div>
-              <button
-                onClick={handleSendCode}
-                disabled={isSending || countdown > 0 || !email}
-                className="px-4 py-2.5 bg-gray-100 text-gray-700 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap min-w-[110px]"
-              >
-                {isSending ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : countdown > 0 ? `${countdown}s 后重发` : '获取验证码'}
-              </button>
-            </div>
-          </div>
 
           <button
-            onClick={handleVerify}
-            disabled={isVerifying || !email || !code}
-            className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50"
+            onClick={handleGoogleLogin}
+            disabled={isVerifying}
+            className="w-full flex justify-center items-center py-3 px-4 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50"
           >
-            {isVerifying ? <Loader2 className="w-5 h-5 animate-spin" /> : '登录 / 注册'}
+            {isVerifying ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <>
+                <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
+                  <path
+                    fill="currentColor"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                  />
+                </svg>
+                使用 Google 账号登录
+              </>
+            )}
           </button>
           
           <p className="text-xs text-center text-gray-500 mt-4">
-            未注册的邮箱验证后将自动创建账号
+            使用 Google 账号安全登录
           </p>
         </div>
       </div>
